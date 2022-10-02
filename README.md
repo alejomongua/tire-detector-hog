@@ -37,3 +37,16 @@ https://lear.inrialpes.fr/people/triggs/pubs/Dalal-cvpr05.pdf
 9. ?
 
 10. Profit
+
+## Compiling instructions
+
+To compile this program, I need to have cmake installed
+
+    mkdir build
+    cd build
+    cmake ..
+    make
+
+It generates a `build/TireDetector` executable file, then I can use with
+
+    build/TireDetector /path/to/images
