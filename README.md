@@ -20,25 +20,35 @@ The algorith is based on the one showed in this article: https://towardsdatascie
 
 ### Code
 
-1. Iterar sobre folder de imágenes
+1. Load image
 
-2. Cargar cada imagen
+2. Resize image in 64 x 64
 
-3. Redimencionar cada imagen
+3. Calculate gradients
 
-4. Calcular los gradientes
+4. Divide in 8x8 cells
 
-5. Dividir en celdas de 8x8
+5. Calculate histograms
 
-6. Calcular histogramas
+6. Normalize 2 x 2 blocks
 
-7. Normalizar en bloques de 16 x 16
+7. Train classifier (p.e. SVM)
 
-8. Pasar los histogramas normalizados por un clasificador (p.e. SVM)
+8. Create a menu to:
+
+a. Train
+
+b. Test
+
+c. Predict
 
 9. ?
 
 10. Profit
+
+## Notes
+
+For training, I need to input a folder path, it should generate a json file with training results. For testing I should pass a folder path and a json file with trained weights, and to predict i should pass an image path and a path for the json trained weights.
 
 ## Compiling instructions
 
@@ -52,3 +62,4 @@ To compile this program, I need to have cmake installed
 It generates a `build/TireDetector` executable file, then I can use with
 
     build/TireDetector /path/to/images
+
