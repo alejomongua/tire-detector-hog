@@ -12,11 +12,13 @@ The algorith is based on the one showed in this article: https://towardsdatascie
 
 ### Get dataset
 
-1. Conseguir imágenes donde haya llantas
+1. Get images with tires
 
-2. Marcar las imágenes con llantas
+2. Label tires in images
 
-3. Extraer las imágenes solo de las llantas
+3. Extract only tires
+
+4. Get images of things other than tires
 
 ### Code
 
