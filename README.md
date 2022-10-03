@@ -6,6 +6,8 @@ More on HOG detectors:
 
 https://lear.inrialpes.fr/people/triggs/pubs/Dalal-cvpr05.pdf
 
+The algorith is based on the one showed in this article: https://towardsdatascience.com/hog-histogram-of-oriented-gradients-67ecd887675f
+
 ## Steps
 
 ### Get dataset
