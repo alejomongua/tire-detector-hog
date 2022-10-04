@@ -6,6 +6,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <string>
+#include <vector>
 #include <cmath>
 
 using namespace std;
@@ -13,27 +14,21 @@ using namespace cv;
 
 #define EPSILON 1e-10
 
-string* getImages(const char* dirname)
+vector<string> getImages(const char* dirname)
 {
     const unsigned int BATCH_SIZE = 1024;
     struct dirent* entry = NULL;
     string filename;
     DIR* dp = NULL;
     int stringCounter = 0;
-    string* output;
+    vector<string> output;
 
     dp = opendir(dirname);
 
     if (dp == NULL)
     {
         perror("Directorio incorrecto\n");
-        return NULL;
-    }
-
-    output = (string*)malloc(sizeof(string) * BATCH_SIZE);
-    if (output == NULL) {
-        perror("Hubo un error aquí\n");
-        return NULL;
+        return vector<string>();
     }
 
     while ((entry = readdir(dp)))
@@ -43,14 +38,7 @@ string* getImages(const char* dirname)
         if (filename.find(".jpg") == -1)
             continue;
 
-        if (stringCounter && !(stringCounter % BATCH_SIZE)) {
-            output = (string*)realloc(output, sizeof(string) * BATCH_SIZE * (stringCounter / BATCH_SIZE + 1));
-            if (output == NULL) {
-                perror("Hubo un error aquí\n");
-                return NULL;
-            }
-        }
-        output[stringCounter++] = filename;
+        output.push_back(filename);
     }
 
     closedir(dp);
@@ -156,31 +144,13 @@ int main(int argc, const char** argv)
         ? argv[1]
         : "/root/sistemas_distribuidos/dataset/dataset1/llantas/";
     unsigned int index = 0, i, j, k;
-    string* imagePaths = getImages(dirname);
+    vector<string> imagePaths = getImages(dirname);
     float featureVector[7 * 7 * 36];
+    unsigned int vectorSize = imagePaths.size();
 
-    if (imagePaths == NULL)
-    {
-        perror("Hubo un error al leer las imágenes\n");
-        return -1;
+    for (i = 0; i < vectorSize; i++) {
+        getFeatureVector(string(dirname) + imagePaths[i], featureVector);
     }
-
-    while (imagePaths[index] != "") {
-        getFeatureVector(string(dirname) + imagePaths[index++], featureVector);
-        /*
-        for (i = 0; i < 7; i++) {
-            for (j = 0; j < 7; j++) {
-                for (k = 0; k < 36; k++)
-                    cout << featureVector[i * 252 + j * 36 + k] << " ";
-                cout << endl;
-            }
-            cout << " ----------- " << endl;
-        }
-        break;
-        */
-    }
-
-    free(imagePaths);
 
     return 0;
 }
