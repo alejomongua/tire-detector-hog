@@ -8,11 +8,15 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <fstream>
 
 using namespace std;
 using namespace cv;
 
 #define EPSILON 1e-10
+#define FEATURE_VECTOR_SIZE 1764 // = 7 * 7 * 36
+#define EULER 2.71828
+#define EPOCHS 100
 
 vector<string> getImages(const char* dirname)
 {
@@ -138,19 +142,111 @@ int getFeatureVector(string path, float* featureVector) {
     return 0;
 }
 
+float predict(float* featureVector, float* weights) {
+    float sum = weights[0];
+    unsigned int i;
+
+    for (i = 0; i < FEATURE_VECTOR_SIZE; i++) {
+        sum += weights[i + 1] * featureVector[i];
+    }
+
+    return 1 / (1 + pow(EULER, -sum));
+}
+
+void trainLogRegression(unsigned int examples, float** features, unsigned char* labels, float* weights) {
+    unsigned int i, j, k;
+    float prediction, error;
+    float alpha = 0.001; // learning rate
+    for (i = 0; i < FEATURE_VECTOR_SIZE + 1; i++) {
+        weights[i] = 0;
+    }
+
+    for (i = 0; i < EPOCHS; i++) {
+        for (j = 0; j < examples; j++) {
+            prediction = predict(features[j], weights);
+            error = labels[j] - prediction;
+            weights[0] = weights[0] + alpha * error * prediction * (1 - prediction);
+            for (k = 0; k < FEATURE_VECTOR_SIZE; k++) {
+                weights[k + 1] = weights[k + 1] + alpha * error * prediction * (1 - prediction) * features[j][k];
+            }
+        }
+    }
+}
+
 int main(int argc, const char** argv)
 {
-    const char* dirname = argc > 1
+    const char* llantasPath = argc > 1
         ? argv[1]
-        : "/root/sistemas_distribuidos/dataset/dataset1/llantas/";
-    unsigned int index = 0, i, j, k;
-    vector<string> imagePaths = getImages(dirname);
-    float featureVector[7 * 7 * 36];
-    unsigned int vectorSize = imagePaths.size();
+        : "/root/sistemas_distribuidos/dataset/llantas/";
+    const char* noLlantasPath = argc > 2
+        ? argv[2]
+        : "/root/sistemas_distribuidos/dataset/nollantas/";
+    unsigned int i = 0, j = 0, k;
+    char floatToStr[20];
+    vector<string> tireImagePaths = getImages(llantasPath);
+    vector<string> noTireImagePaths = getImages(noLlantasPath);
+    float featureVector[FEATURE_VECTOR_SIZE], weights[FEATURE_VECTOR_SIZE + 1];
+    float** features;
+    unsigned char* labels;
+    unsigned int tireImagesVectorSize = tireImagePaths.size();
+    unsigned int noTireImagesVectorSize = noTireImagePaths.size();
 
-    for (i = 0; i < vectorSize; i++) {
-        getFeatureVector(string(dirname) + imagePaths[i], featureVector);
+    ifstream weightsInFile("weights.data");
+    if (weightsInFile.good()) {
+        cout << "Load weights" << endl;
+        std::vector<int> load;
+        char temp;
+
+        while (weightsInFile.read(&temp, 1)) {
+            floatToStr[i++] = temp;
+            if (temp == ' ') {
+                floatToStr[i] = 0;
+                weights[j++] = atof(floatToStr);
+                i = 0;
+            }
+        }
+        cout << weights[0];
+
+        weightsInFile.close();
+
+        // To do: execute prediction
+        return 0;
     }
+
+    features = (float**)malloc(sizeof(float) * FEATURE_VECTOR_SIZE
+        * (tireImagesVectorSize + noTireImagesVectorSize));
+
+    labels = (unsigned char*)malloc(sizeof(unsigned char)
+        * (tireImagesVectorSize + noTireImagesVectorSize));
+
+    for (i = 0; i < tireImagesVectorSize; i++) {
+        getFeatureVector(string(llantasPath) + tireImagePaths[i], featureVector);
+        features[i] = featureVector;
+        labels[i] = 1;
+    }
+
+    for (i = 0; i < noTireImagesVectorSize; i++) {
+        getFeatureVector(string(noLlantasPath) + noTireImagePaths[i], featureVector);
+        features[i + tireImagesVectorSize] = featureVector;
+        labels[i] = 0;
+    }
+
+    trainLogRegression(tireImagesVectorSize + noTireImagesVectorSize,
+        features, labels, weights);
+
+    ofstream weightsFile("weights.data", ios::out);
+    if (!weightsFile.is_open())
+    {
+        perror("Unable to save weights to file\n");
+        return -1;
+    }
+
+    for (i = 0; i < FEATURE_VECTOR_SIZE + 1; i++) {
+        snprintf(floatToStr, 20, "%f ", weights[i]);
+        weightsFile << floatToStr;
+    }
+
+    weightsFile.close();
 
     return 0;
 }
