@@ -17,6 +17,8 @@ using namespace cv;
 #define FEATURE_VECTOR_SIZE 1764 // = 7 * 7 * 36
 #define EULER 2.71828
 #define EPOCHS 100
+#define WEIGHTS_FILE_PATH "weights.data"
+
 
 vector<string> getImages(const char* dirname)
 {
@@ -61,7 +63,8 @@ int getFeatureVector(string path, float* featureVector) {
     unsigned int i, j, k, l, m, tempI, tempJ, baseIndex;
     Mat img, resizedImg, gx, gy, mag, angle;
     Mat magnitudeValues, angleValues, histograms, output;
-    float histogram[8][8][9], Cj[10], vJ, vJp1, singleAngle, singleMagnitude, norm;
+    float histogram[8][8][9], Cj[10], vJ, vJp1;
+    float singleAngle, singleMagnitude, norm;
     unsigned char valueJ;
 
     for (i = 0; i < 10; i++) {
@@ -93,8 +96,10 @@ int getFeatureVector(string path, float* featureVector) {
             tempI = i * 8;
             tempJ = j * 8;
             // Extract block
-            magnitudeValues = mag(Range(tempI, tempI + 8), Range(tempJ, tempJ + 8));
-            angleValues = angle(Range(tempI, tempI + 8), Range(tempJ, tempJ + 8));
+            magnitudeValues = mag(Range(tempI, tempI + 8),
+                Range(tempJ, tempJ + 8));
+            angleValues = angle(Range(tempI, tempI + 8),
+                Range(tempJ, tempJ + 8));
             // Initialize histogram:
             for (k = 0; k < 9; k++) {
                 histogram[i][j][k] = 0.0;
@@ -109,7 +114,8 @@ int getFeatureVector(string path, float* featureVector) {
                         singleMagnitude = -singleMagnitude;
                     }
                     valueJ = calculateJ(singleAngle);
-                    vJ = calculateValueJ(singleMagnitude, singleAngle, Cj[valueJ]);
+                    vJ = calculateValueJ(singleMagnitude, singleAngle,
+                        Cj[valueJ]);
                     vJp1 = singleMagnitude - vJ;
                     histogram[i][j][valueJ] = vJ;
                     histogram[i][j][(valueJ) % 9] = vJp1;
@@ -132,10 +138,14 @@ int getFeatureVector(string path, float* featureVector) {
                     pow(histogram[i + 1][j + 1][m], 2));
                 // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
                 // 36 * 7 = 252
-                featureVector[baseIndex + m * 4] = histogram[i][j][m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 1] = histogram[i + 1][j][m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 2] = histogram[i][j + 1][m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 3] = histogram[i + 1][j + 1][m] / (norm + EPSILON);
+                featureVector[baseIndex + m * 4] =
+                    histogram[i][j][m] / (norm + EPSILON);
+                featureVector[baseIndex + m * 4 + 1] =
+                    histogram[i + 1][j][m] / (norm + EPSILON);
+                featureVector[baseIndex + m * 4 + 2] =
+                    histogram[i][j + 1][m] / (norm + EPSILON);
+                featureVector[baseIndex + m * 4 + 3] =
+                    histogram[i + 1][j + 1][m] / (norm + EPSILON);
             }
         }
     }
@@ -153,7 +163,8 @@ float predict(float* featureVector, float* weights) {
     return 1 / (1 + pow(EULER, -sum));
 }
 
-void trainLogRegression(unsigned int examples, float** features, unsigned char* labels, float* weights) {
+void trainLogRegression(unsigned int epochs, unsigned int examples, float** features,
+    unsigned char* labels, float* weights) {
     unsigned int i, j, k;
     float prediction, error;
     float alpha = 0.001; // learning rate
@@ -161,92 +172,145 @@ void trainLogRegression(unsigned int examples, float** features, unsigned char* 
         weights[i] = 0;
     }
 
-    for (i = 0; i < EPOCHS; i++) {
+    for (i = 0; i < epochs; i++) {
         for (j = 0; j < examples; j++) {
             prediction = predict(features[j], weights);
             error = labels[j] - prediction;
-            weights[0] = weights[0] + alpha * error * prediction * (1 - prediction);
+            weights[0] = weights[0] + alpha * error * prediction
+                * (1 - prediction);
             for (k = 0; k < FEATURE_VECTOR_SIZE; k++) {
-                weights[k + 1] = weights[k + 1] + alpha * error * prediction * (1 - prediction) * features[j][k];
+                weights[k + 1] = weights[k + 1] + alpha
+                    * error * prediction * (1 - prediction) * features[j][k];
             }
         }
     }
 }
 
+/*
+ * This function loads weights from weights file
+ * it returns 1 if there are no weights or 0 if
+ * weights are loaded
+ */
+unsigned char loadWeights(float* weights) {
+    char floatToStr[20];
+    unsigned int i = 0, j = 0;
+    ifstream weightsInFile(WEIGHTS_FILE_PATH);
+
+    if (!weightsInFile.good()) {
+        return 1;
+    }
+    std::vector<int> load;
+    char temp;
+
+    while (weightsInFile.read(&temp, 1)) {
+        floatToStr[i++] = temp;
+        if (temp == ' ') {
+            floatToStr[i] = 0;
+            weights[j++] = atof(floatToStr);
+            i = 0;
+        }
+    }
+
+    weightsInFile.close();
+    return 0;
+}
+
 int main(int argc, const char** argv)
 {
-    const char* llantasPath = argc > 1
-        ? argv[1]
-        : "/root/sistemas_distribuidos/dataset/llantas/";
-    const char* noLlantasPath = argc > 2
-        ? argv[2]
-        : "/root/sistemas_distribuidos/dataset/nollantas/";
-    unsigned int i = 0, j = 0, k;
-    char floatToStr[20];
-    vector<string> tireImagePaths = getImages(llantasPath);
-    vector<string> noTireImagePaths = getImages(noLlantasPath);
+    const char* nonTiresPath;
+    const char* tiresPath;
+    vector<string> tireImagePaths, noTireImagePaths;
+    unsigned int i = 0, j = 0, k, epochs;
+    unsigned int tireImagesVectorSize, noTireImagesVectorSize;
     float featureVector[FEATURE_VECTOR_SIZE], weights[FEATURE_VECTOR_SIZE + 1];
+    float prediction;
     float** features;
     unsigned char* labels;
-    unsigned int tireImagesVectorSize = tireImagePaths.size();
-    unsigned int noTireImagesVectorSize = noTireImagePaths.size();
+    char floatToStr[20];
 
-    ifstream weightsInFile("weights.data");
-    if (weightsInFile.good()) {
-        cout << "Load weights" << endl;
-        std::vector<int> load;
-        char temp;
-
-        while (weightsInFile.read(&temp, 1)) {
-            floatToStr[i++] = temp;
-            if (temp == ' ') {
-                floatToStr[i] = 0;
-                weights[j++] = atof(floatToStr);
-                i = 0;
-            }
+    // If two paths are passed, it should train
+    // the first path is the folder with tires, and the second path is the
+    // non-tires folder
+    if (argc > 2) {
+        tiresPath = argv[1];
+        nonTiresPath = argv[2];
+        epochs = EPOCHS;
+        if (argc < 3) {
+            epochs = atoi(argv[3]);
         }
-        cout << weights[0];
+        tireImagePaths = getImages(tiresPath);
+        noTireImagePaths = getImages(nonTiresPath);
+        tireImagesVectorSize = tireImagePaths.size();
+        noTireImagesVectorSize = noTireImagePaths.size();
+        features = (float**)malloc(sizeof(float) * FEATURE_VECTOR_SIZE
+            * (tireImagesVectorSize + noTireImagesVectorSize));
 
-        weightsInFile.close();
+        labels = (unsigned char*)malloc(sizeof(unsigned char)
+            * (tireImagesVectorSize + noTireImagesVectorSize));
 
-        // To do: execute prediction
+        for (i = 0; i < tireImagesVectorSize; i++) {
+            getFeatureVector(string(tiresPath) + tireImagePaths[i],
+                featureVector);
+            features[i] = featureVector;
+            labels[i] = 1;
+        }
+
+        for (i = 0; i < noTireImagesVectorSize; i++) {
+            getFeatureVector(string(nonTiresPath) + noTireImagePaths[i],
+                featureVector);
+            features[i + tireImagesVectorSize] = featureVector;
+            labels[i] = 0;
+        }
+
+        trainLogRegression(epochs, tireImagesVectorSize + noTireImagesVectorSize,
+            features, labels, weights);
+
+        ofstream weightsFile(WEIGHTS_FILE_PATH, ios::out);
+        if (!weightsFile.is_open())
+        {
+            perror("Unable to save weights to file\n");
+            return -1;
+        }
+
+        for (i = 0; i < FEATURE_VECTOR_SIZE + 1; i++) {
+            snprintf(floatToStr, 20, "%f ", weights[i]);
+            weightsFile << floatToStr;
+        }
+
+        weightsFile.close();
+
+
         return 0;
     }
 
-    features = (float**)malloc(sizeof(float) * FEATURE_VECTOR_SIZE
-        * (tireImagesVectorSize + noTireImagesVectorSize));
+    // If only a CLI parameter is provided, it expects it to be an image path
+    // so it predicts if its a tire or not
+    if (argc > 1) {
+        if (loadWeights(weights)) {
+            cerr << "You must train model first, pass two folders: the " <<
+                "first one containing tires images and the second one " <<
+                "containing non-tires images" << endl;
+            return -1;
+        }
+        getFeatureVector(string(argv[1]), featureVector);
 
-    labels = (unsigned char*)malloc(sizeof(unsigned char)
-        * (tireImagesVectorSize + noTireImagesVectorSize));
+        prediction = predict(featureVector, weights);
 
-    for (i = 0; i < tireImagesVectorSize; i++) {
-        getFeatureVector(string(llantasPath) + tireImagePaths[i], featureVector);
-        features[i] = featureVector;
-        labels[i] = 1;
+        if (prediction > 0.5) {
+            printf("This picture represents a tire, confidence: %.1f%%",
+                prediction * 100);
+            cout << endl;
+            return 0;
+        }
+        printf("This picture does not represent a tire, confidence: %.1f%%",
+            (1 - prediction) * 100);
+        cout << endl;
+        return 0;
     }
 
-    for (i = 0; i < noTireImagesVectorSize; i++) {
-        getFeatureVector(string(noLlantasPath) + noTireImagePaths[i], featureVector);
-        features[i + tireImagesVectorSize] = featureVector;
-        labels[i] = 0;
-    }
+    cerr << "You must pass either a path containing an image or two paths: " <<
+        "the first one containing tires images and the second one " <<
+        "containing non-tires images" << endl;
+    return -1;
 
-    trainLogRegression(tireImagesVectorSize + noTireImagesVectorSize,
-        features, labels, weights);
-
-    ofstream weightsFile("weights.data", ios::out);
-    if (!weightsFile.is_open())
-    {
-        perror("Unable to save weights to file\n");
-        return -1;
-    }
-
-    for (i = 0; i < FEATURE_VECTOR_SIZE + 1; i++) {
-        snprintf(floatToStr, 20, "%f ", weights[i]);
-        weightsFile << floatToStr;
-    }
-
-    weightsFile.close();
-
-    return 0;
 }
