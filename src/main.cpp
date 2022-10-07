@@ -179,12 +179,15 @@ int getFeatureVector(string path, float* featureVector) {
 }
 
 float predict(float* featureVector, float* weights) {
-    float sum = weights[0];
+    float sum = 0;
     unsigned int i;
 
+#pragma omp parallel for reduction (+:sum)
     for (i = 0; i < FEATURE_VECTOR_SIZE; i++) {
         sum += weights[i + 1] * featureVector[i];
     }
+
+    sum += weights[0];
 
     return 1 / (1 + pow(EULER, -sum));
 }
