@@ -162,25 +162,6 @@ float predict(float* featureVector, float* weights) {
     return 1 / (1 + pow(EULER, -sum));
 }
 
-void shuffle(unsigned char* labels, float** examples, size_t n)
-{
-    if (n > 1)
-    {
-        size_t i;
-        for (i = 0; i < n - 1; i++)
-        {
-            size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
-            float* t;
-            t = examples[j];
-            examples[j] = examples[i];
-            examples[i] = t;
-            unsigned char w = labels[j];
-            labels[j] = labels[i];
-            labels[i] = w;
-        }
-    }
-}
-
 float cost(unsigned char label, float prediction) {
     if (prediction == label)
         return 0;
@@ -199,7 +180,6 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float** feat
     }
 
     for (i = 0; i < epochs; i++) {
-        shuffle(labels, features, examples);
         if (!(i % 100)) {
             printf("Epoch %d/%d...\n", i, epochs);
         }
