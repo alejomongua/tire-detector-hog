@@ -9,6 +9,7 @@
 #include <vector>
 #include <cmath>
 #include <fstream>
+#include <omp.h>
 
 using namespace std;
 using namespace cv;
@@ -75,12 +76,8 @@ vector<string> getImages(const char* dirname)
 }
 
 int getFeatureVector(string path, float* featureVector) {
-    unsigned int i, j, k, l, m, tempI, tempJ, baseIndex;
     Mat img, resizedImg, gx, gy, mag, angle;
-    Mat magnitudeValues, angleValues, histograms;
-    float histogram[8][8][9], vJ, vJp1;
-    float singleAngle, singleMagnitude, norm;
-    unsigned char valueJ;
+    float histogram[8][8][9];
 
     // Load images in an opencv matrix in gray scale
     img = imread(path, IMREAD_GRAYSCALE);
@@ -105,32 +102,35 @@ int getFeatureVector(string path, float* featureVector) {
     cartToPolar(gx, gy, mag, angle, 1);
 
     // Process 8 x 8 blocks
-    for (i = 0; i < 8; i++) {
-        for (j = 0; j < 8; j++) {
+#pragma omp parallel num_threads(8)
+    // for (int i = 0; i < 8; i++)
+    {
+        int i = omp_get_thread_num();
+        for (int j = 0; j < 8; j++) {
 
-            tempI = i * 8;
-            tempJ = j * 8;
+            int tempI = i * 8;
+            int tempJ = j * 8;
             // Extract block
-            magnitudeValues = mag(Range(tempI, tempI + 8),
+            Mat magnitudeValues = mag(Range(tempI, tempI + 8),
                 Range(tempJ, tempJ + 8));
-            angleValues = angle(Range(tempI, tempI + 8),
+            Mat angleValues = angle(Range(tempI, tempI + 8),
                 Range(tempJ, tempJ + 8));
             // Initialize histogram:
-            for (k = 0; k < 9; k++) {
+            for (int k = 0; k < 9; k++) {
                 histogram[i][j][k] = 0.0;
             }
             // Fill histogram
-            for (k = 0; k < 8; k++) {
-                for (l = 0; l < 8; l++) {
-                    singleAngle = angleValues.at<float>(k, l);
-                    singleMagnitude = magnitudeValues.at<float>(k, l);
+            for (int k = 0; k < 8; k++) {
+                for (int l = 0; l < 8; l++) {
+                    float singleAngle = angleValues.at<float>(k, l);
+                    float singleMagnitude = magnitudeValues.at<float>(k, l);
                     if (singleAngle >= 180.0) {
                         singleAngle = singleAngle - 180;
                         singleMagnitude = -singleMagnitude;
                     }
-                    valueJ = (unsigned char)(singleAngle / 20);
-                    vJ = singleMagnitude * (singleAngle - Cj[valueJ]) / 20;
-                    vJp1 = singleMagnitude - vJ;
+                    unsigned char valueJ = (unsigned char)(singleAngle / 20);
+                    float vJ = singleMagnitude * (singleAngle - Cj[valueJ]) / 20;
+                    float vJp1 = singleMagnitude - vJ;
                     histogram[i][j][valueJ] += vJp1;
                     histogram[i][j][valueJ + 1] += vJ;
                 }
@@ -139,21 +139,24 @@ int getFeatureVector(string path, float* featureVector) {
     }
 
     // Normalize
-    for (i = 0; i < 7; i++) {
-        for (j = 0; j < 7; j++) {
+#pragma omp parallel num_threads(7)
+    // for (int i = 0; i < 7; i++)
+    {
+        int i = omp_get_thread_num();
+        for (int j = 0; j < 7; j++) {
             // baseIndex needs to be calculated only once
-            baseIndex = i * 252 + j * 36;
+            int baseIndex = i * 252 + j * 36;
             float powerSum = 0.0;
-            for (m = 0; m < 9; m++) {
+            for (int m = 0; m < 9; m++) {
                 // Square root of sum of squares
                 powerSum += pow(histogram[i][j][m], 2) +
                     pow(histogram[i + 1][j][m], 2) +
                     pow(histogram[i][j + 1][m], 2) +
                     pow(histogram[i + 1][j + 1][m], 2);
             }
-            norm = sqrt(powerSum);
+            float norm = sqrt(powerSum);
 
-            for (m = 0; m < 9; m++) {
+            for (int m = 0; m < 9; m++) {
                 // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
                 // 36 * 7 = 252
                 featureVector[baseIndex + m * 4] =
@@ -201,6 +204,8 @@ void shuffle(unsigned char* labels, float** examples, size_t n)
 }
 
 float cost(unsigned char label, float prediction) {
+    if (prediction == label)
+        return 0;
     float cost1 = label * log(prediction);
     float cost2 = (1 - label) * log(1 - prediction);
     return -cost1 - cost2;
@@ -230,9 +235,9 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float** feat
             for (k = 0; k < FEATURE_VECTOR_SIZE; k++) {
                 weights[k + 1] = weights[k + 1] + alpha * error * features[j][k];
             }
-            // costo += cost(labels[j], prediction);
+            costo += cost(labels[j], prediction);
         }
-        // cout << "Costo=" << costo / examples << endl;
+        cout << "Costo=" << costo / examples << endl;
     }
 }
 
@@ -353,14 +358,14 @@ int main(int argc, const char** argv)
         labels = (unsigned char*)malloc(sizeof(unsigned char) * totalSize);
 
         for (i = 0; i < tireImagesVectorSize; i++) {
-            features[i] = (float*) malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(tiresPath) + tireImagePaths[i],
                 features[i]);
             labels[i] = 1;
         }
 
         for (i = tireImagesVectorSize; i < totalSize; i++) {
-            features[i] = (float*) malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
                 features[i]);
             labels[i] = 0;
@@ -417,4 +422,3 @@ int main(int argc, const char** argv)
     return -1;
 
 }
-

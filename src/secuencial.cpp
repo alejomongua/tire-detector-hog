@@ -201,6 +201,8 @@ void shuffle(unsigned char* labels, float** examples, size_t n)
 }
 
 float cost(unsigned char label, float prediction) {
+    if (prediction == label)
+        return 0;
     float cost1 = label * log(prediction);
     float cost2 = (1 - label) * log(1 - prediction);
     return -cost1 - cost2;
@@ -353,14 +355,14 @@ int main(int argc, const char** argv)
         labels = (unsigned char*)malloc(sizeof(unsigned char) * totalSize);
 
         for (i = 0; i < tireImagesVectorSize; i++) {
-            features[i] = (float*) malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(tiresPath) + tireImagePaths[i],
                 features[i]);
             labels[i] = 1;
         }
 
         for (i = tireImagesVectorSize; i < totalSize; i++) {
-            features[i] = (float*) malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
                 features[i]);
             labels[i] = 0;
