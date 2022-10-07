@@ -267,43 +267,49 @@ unsigned char loadWeights(float* weights) {
     return 0;
 }
 
+void drawVector(Mat* img, float* featureVector, unsigned char baseIndex, unsigned char index) {
+    const int width = 64;
+    *img = Mat::zeros(width, width, CV_32F);
+    for (int k = 0; k < 9; k++) {
+        unsigned int x = (unsigned int)(featureVector[baseIndex + k * 4 + index] * cosine[k] * width + width / 2);
+        unsigned int y = (unsigned int)(featureVector[baseIndex + k * 4 + index] * sine[k] * width + width / 2);
+
+        circle(
+            *img,
+            Point(width / 2, width / 2),
+            2,
+            Scalar(255),
+            2,
+            1,
+            0);
+        line(
+            *img,
+            Point(width / 2, width / 2),
+            Point(x, y),
+            Scalar(255),
+            1,
+            LINE_8
+        );
+    }
+}
 void drawFeatureVector(float* featureVector) {
     unsigned int i, j, k, x, y;
-    const int width = 64;
-    Mat img, img1, img2;
+    Mat img, img1, img2, img3[4], img4, img5;
 
-    for (i = 0; i < 14; i++) {
-        for (j = 0; j < 14; j++) {
-            if (!j) {
-                img = Mat::zeros(width, width, CV_32F);
-                for (k = 0; k < 9; k++) {
-                    x = (unsigned int)(featureVector[i * 126 + j * 36 + k] * cosine[k] * width + width / 2);
-                    y = (unsigned int)(featureVector[i * 126 + j * 36 + k] * sine[k] * width + width / 2);
-                    line(
-                        img,
-                        Point(width / 2, width / 2),
-                        Point(x, y),
-                        Scalar(255),
-                        1,
-                        LINE_8
-                    );
-                }
+    for (i = 0; i < 7; i++) {
+        for (j = 0; j < 7; j++) {
+            for (k = 0; k < 4; k++) {
+                drawVector(&img3[k], featureVector, i * 252 + j * 36, k);
+            }
+            hconcat(img3[0], img3[1], img4);
+            hconcat(img3[2], img3[3], img5);
+
+            if (j) {
+                vconcat(img4, img5, img1);
+                hconcat(img, img1, img);
             }
             else {
-                img1 = Mat::zeros(width, width, CV_32F);
-                for (k = 0; k < 9; k++) {
-                    x = (unsigned int)(featureVector[i * 126 + j * 36 + k] * cosine[k] * width + width / 2);
-                    y = (unsigned int)(featureVector[i * 126 + j * 36 + k] * sine[k] * width + width / 2);
-                    line(
-                        img1,
-                        Point(width / 2, width / 2),
-                        Point(x, y),
-                        Scalar(255),
-                        1,
-                        LINE_8
-                    );
-                }
-                hconcat(img, img1, img);
+                vconcat(img4, img5, img);
             }
         }
         if (img2.empty()) {
@@ -314,8 +320,8 @@ void drawFeatureVector(float* featureVector) {
         }
     }
 
-    // imshow("Display window", img2);
-    // waitKey(0); // Wait for a keystroke in the window
+    imshow("Display window", img2);
+    waitKey(0); // Wait for a keystroke in the window
 }
 
 int main(int argc, const char** argv)
