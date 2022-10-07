@@ -22,7 +22,7 @@ vector<string> getImages(const char* dirname)
 
     if (dp == NULL)
     {
-        perror("Directorio incorrecto\n");
+        cerr << "Directorio incorrecto" << endl;
         return vector<string>();
     }
 
@@ -42,15 +42,18 @@ vector<string> getImages(const char* dirname)
     pattern.append("\\*");
     WIN32_FIND_DATA data;
     HANDLE hFind;
-    if ((hFind = FindFirstFile(pattern.c_str(), &data)) != INVALID_HANDLE_VALUE) {
-        do {
-            filename = string(data.cFileName);
-            if (filename.find(".jpg") == -1)
-                continue;
-            output.push_back(filename);
-        } while (FindNextFile(hFind, &data) != 0);
-        FindClose(hFind);
+    if ((hFind = FindFirstFile(pattern.c_str(), &data)) == INVALID_HANDLE_VALUE) {
+        cerr << "Directorio incorrecto" << endl;
+        return vector<string>();
     }
+
+    do {
+        filename = string(data.cFileName);
+        if (filename.find(".jpg") == -1)
+            continue;
+        output.push_back(filename);
+    } while (FindNextFile(hFind, &data) != 0);
+    FindClose(hFind);
 #endif
     return output;
 }

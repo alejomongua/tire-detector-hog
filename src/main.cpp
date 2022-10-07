@@ -46,12 +46,8 @@ const float sine[9] = {
 float Cj[10];
 
 int getFeatureVector(string path, float* featureVector) {
-    unsigned int i, j, k, l, m, tempI, tempJ, baseIndex;
     Mat img, resizedImg, gx, gy, mag, angle;
-    Mat magnitudeValues, angleValues;
-    float histogram[8][8][9], vJ, vJp1;
-    float singleAngle, singleMagnitude, norm;
-    unsigned char valueJ;
+    float histogram[8][8][9];
 
     // Load images in an opencv matrix in gray scale
     img = imread(path, IMREAD_GRAYSCALE);
@@ -96,7 +92,7 @@ int getFeatureVector(string path, float* featureVector) {
             }
             // Fill histogram
             for (int k = 0; k < 8; k++) {
-                for (l = 0; l < 8; l++) {
+                for (int l = 0; l < 8; l++) {
                     float singleAngle = angleValues.at<float>(k, l);
                     float singleMagnitude = magnitudeValues.at<float>(k, l);
                     if (singleAngle >= 180.0) {
@@ -122,7 +118,7 @@ int getFeatureVector(string path, float* featureVector) {
             // baseIndex needs to be calculated only once
             unsigned int baseIndex = i * 252 + j * 36;
             float powerSum = 0.0;
-            for (m = 0; m < 9; m++) {
+            for (int m = 0; m < 9; m++) {
                 // Square root of sum of squares
                 powerSum += pow(histogram[i][j][m], 2) +
                     pow(histogram[i + 1][j][m], 2) +
@@ -150,10 +146,8 @@ int getFeatureVector(string path, float* featureVector) {
 
 float predict(float* featureVector, float* weights) {
     float sum = 0;
-    unsigned int i;
 
-#pragma omp parallel for reduction (+:sum)
-    for (i = 0; i < FEATURE_VECTOR_SIZE; i++) {
+    for (int i = 0; i < FEATURE_VECTOR_SIZE; i++) {
         sum += weights[i + 1] * featureVector[i];
     }
 
