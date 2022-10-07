@@ -136,11 +136,6 @@ int getFeatureVector(string path, float* featureVector) {
                     histogram[i][j + 1][m] / (norm + EPSILON);
                 featureVector[baseIndex + m * 4 + 3] =
                     histogram[i + 1][j + 1][m] / (norm + EPSILON);
-
-                // cout << featureVector[baseIndex + m * 4] << " "
-                //      << featureVector[baseIndex + m * 4 + 1] << " " 
-                //      << featureVector[baseIndex + m * 4 + 2] << " " 
-                //      << featureVector[baseIndex + m * 4 + 3] << endl;
             }
         }
     }

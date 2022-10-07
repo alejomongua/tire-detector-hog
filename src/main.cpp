@@ -47,7 +47,10 @@ float Cj[10];
 
 int getFeatureVector(string path, float* featureVector) {
     Mat img, resizedImg, gx, gy, mag, angle;
-    float histogram[8][8][9];
+    // Necesito una variable de tamaño 8 x 8 x 9, pero dejo
+    // 8 x 8 x 16 para alinear la memoria en potencias de 2 para
+    // evitar problemas de false sharing
+    float histogram[8][8][16];
 
     // Load images in an opencv matrix in gray scale
     img = imread(path, IMREAD_GRAYSCALE);
@@ -145,13 +148,12 @@ int getFeatureVector(string path, float* featureVector) {
 }
 
 float predict(float* featureVector, float* weights) {
-    float sum = 0;
+    float sum = weights[0];
+    unsigned int i;
 
-    for (int i = 0; i < FEATURE_VECTOR_SIZE; i++) {
+    for (i = 0; i < FEATURE_VECTOR_SIZE; i++) {
         sum += weights[i + 1] * featureVector[i];
     }
-
-    sum += weights[0];
 
     return 1 / (1 + pow(EULER, -sum));
 }
