@@ -13,4 +13,6 @@ _deps
 build
 weights.data
 *.o
+*.pyc
+__pycache__
 

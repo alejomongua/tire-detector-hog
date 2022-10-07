@@ -22,7 +22,7 @@ vector<string> getImages(const char* dirname)
 
     if (dp == NULL)
     {
-        cerr << "Directorio incorrecto" << endl;
+        cerr << "Directorio incorrecto " << dirname << endl;
         return vector<string>();
     }
 
@@ -43,7 +43,7 @@ vector<string> getImages(const char* dirname)
     WIN32_FIND_DATA data;
     HANDLE hFind;
     if ((hFind = FindFirstFile(pattern.c_str(), &data)) == INVALID_HANDLE_VALUE) {
-        cerr << "Directorio incorrecto" << endl;
+        cerr << "Directorio incorrecto " << dirname << endl;
         return vector<string>();
     }
 
