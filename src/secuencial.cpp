@@ -32,20 +32,20 @@ const float cosine[9] = {
 };
 const float sine[9] = {
     0,
-    0.342021,
-    0.642789,
-    0.866027,
-    0.984808,
-    0.984807,
-    0.866023,
-    0.642783,
-    0.342014,
+    -0.342021,
+    -0.642789,
+    -0.866027,
+    -0.984808,
+    -0.984807,
+    -0.866023,
+    -0.642783,
+    -0.342014,
 };
 float Cj[10];
 
 vector<string> getImages(const char* dirname)
 {
-    const unsigned int BATCH_SIZE = 1024;
+    const unsigned int BATCH_SIZE = 896;
     struct dirent* entry = NULL;
     string filename;
     DIR* dp = NULL;
@@ -77,7 +77,7 @@ vector<string> getImages(const char* dirname)
 int getFeatureVector(string path, float* featureVector) {
     unsigned int i, j, k, l, m, tempI, tempJ, baseIndex;
     Mat img, resizedImg, gx, gy, mag, angle;
-    Mat magnitudeValues, angleValues, histograms;
+    Mat magnitudeValues, angleValues;
     float histogram[8][8][9], vJ, vJp1;
     float singleAngle, singleMagnitude, norm;
     unsigned char valueJ;
@@ -113,8 +113,10 @@ int getFeatureVector(string path, float* featureVector) {
             // Extract block
             magnitudeValues = mag(Range(tempI, tempI + 8),
                 Range(tempJ, tempJ + 8));
+
             angleValues = angle(Range(tempI, tempI + 8),
                 Range(tempJ, tempJ + 8));
+
             // Initialize histogram:
             for (k = 0; k < 9; k++) {
                 histogram[i][j][k] = 0.0;
@@ -164,6 +166,11 @@ int getFeatureVector(string path, float* featureVector) {
                     histogram[i][j + 1][m] / (norm + EPSILON);
                 featureVector[baseIndex + m * 4 + 3] =
                     histogram[i + 1][j + 1][m] / (norm + EPSILON);
+
+                // cout << featureVector[baseIndex + m * 4] << " "
+                //      << featureVector[baseIndex + m * 4 + 1] << " " 
+                //      << featureVector[baseIndex + m * 4 + 2] << " " 
+                //      << featureVector[baseIndex + m * 4 + 3] << endl;
             }
         }
     }
@@ -171,12 +178,17 @@ int getFeatureVector(string path, float* featureVector) {
 }
 
 float predict(float* featureVector, float* weights) {
-    float sum = weights[0];
+    float sum = 0;
     unsigned int i;
 
-    for (i = 0; i < FEATURE_VECTOR_SIZE; i++) {
-        sum += weights[i + 1] * featureVector[i];
+#pragma omp parallel for reduction (+:sum)
+    {
+        for (i = 0; i < FEATURE_VECTOR_SIZE; i++) {
+            sum = weights[i + 1] * featureVector[i];
+        }
     }
+
+    sum += weights[0];
 
     return 1 / (1 + pow(EULER, -sum));
 }
@@ -267,12 +279,12 @@ unsigned char loadWeights(float* weights) {
     return 0;
 }
 
-void drawVector(Mat* img, float* featureVector, unsigned char baseIndex, unsigned char index) {
+void drawVector(Mat* img, float* featureVector, unsigned int baseIndex, unsigned char index) {
     const int width = 64;
     *img = Mat::zeros(width, width, CV_32F);
     for (int k = 0; k < 9; k++) {
-        unsigned int x = (unsigned int)(featureVector[baseIndex + k * 4 + index] * cosine[k] * width + width / 2);
-        unsigned int y = (unsigned int)(featureVector[baseIndex + k * 4 + index] * sine[k] * width + width / 2);
+        unsigned int x = (unsigned int)(featureVector[baseIndex + k * 4 + index] * cosine[k] * width / 2 + width / 2);
+        unsigned int y = (unsigned int)(featureVector[baseIndex + k * 4 + index] * sine[k] * width / 2 + width / 2);
 
         circle(
             *img,

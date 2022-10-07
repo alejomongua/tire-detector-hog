@@ -33,20 +33,20 @@ const float cosine[9] = {
 };
 const float sine[9] = {
     0,
-    0.342021,
-    0.642789,
-    0.866027,
-    0.984808,
-    0.984807,
-    0.866023,
-    0.642783,
-    0.342014,
+    -0.342021,
+    -0.642789,
+    -0.866027,
+    -0.984808,
+    -0.984807,
+    -0.866023,
+    -0.642783,
+    -0.342014,
 };
 float Cj[10];
 
 vector<string> getImages(const char* dirname)
 {
-    const unsigned int BATCH_SIZE = 1024;
+    const unsigned int BATCH_SIZE = 896;
     struct dirent* entry = NULL;
     string filename;
     DIR* dp = NULL;
@@ -76,8 +76,12 @@ vector<string> getImages(const char* dirname)
 }
 
 int getFeatureVector(string path, float* featureVector) {
+    unsigned int i, j, k, l, m, tempI, tempJ, baseIndex;
     Mat img, resizedImg, gx, gy, mag, angle;
-    float histogram[8][8][9];
+    Mat magnitudeValues, angleValues;
+    float histogram[8][8][9], vJ, vJp1;
+    float singleAngle, singleMagnitude, norm;
+    unsigned char valueJ;
 
     // Load images in an opencv matrix in gray scale
     img = imread(path, IMREAD_GRAYSCALE);
@@ -107,21 +111,22 @@ int getFeatureVector(string path, float* featureVector) {
     {
         int i = omp_get_thread_num();
         for (int j = 0; j < 8; j++) {
-
-            int tempI = i * 8;
-            int tempJ = j * 8;
+            unsigned int tempI = i * 8;
+            unsigned int tempJ = j * 8;
             // Extract block
             Mat magnitudeValues = mag(Range(tempI, tempI + 8),
                 Range(tempJ, tempJ + 8));
+
             Mat angleValues = angle(Range(tempI, tempI + 8),
                 Range(tempJ, tempJ + 8));
+
             // Initialize histogram:
             for (int k = 0; k < 9; k++) {
                 histogram[i][j][k] = 0.0;
             }
             // Fill histogram
             for (int k = 0; k < 8; k++) {
-                for (int l = 0; l < 8; l++) {
+                for (l = 0; l < 8; l++) {
                     float singleAngle = angleValues.at<float>(k, l);
                     float singleMagnitude = magnitudeValues.at<float>(k, l);
                     if (singleAngle >= 180.0) {
@@ -145,9 +150,9 @@ int getFeatureVector(string path, float* featureVector) {
         int i = omp_get_thread_num();
         for (int j = 0; j < 7; j++) {
             // baseIndex needs to be calculated only once
-            int baseIndex = i * 252 + j * 36;
+            unsigned int baseIndex = i * 252 + j * 36;
             float powerSum = 0.0;
-            for (int m = 0; m < 9; m++) {
+            for (m = 0; m < 9; m++) {
                 // Square root of sum of squares
                 powerSum += pow(histogram[i][j][m], 2) +
                     pow(histogram[i + 1][j][m], 2) +
@@ -235,9 +240,9 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float** feat
             for (k = 0; k < FEATURE_VECTOR_SIZE; k++) {
                 weights[k + 1] = weights[k + 1] + alpha * error * features[j][k];
             }
-            costo += cost(labels[j], prediction);
+            // costo += cost(labels[j], prediction);
         }
-        cout << "Costo=" << costo / examples << endl;
+        // cout << "Costo=" << costo / examples << endl;
     }
 }
 
@@ -270,43 +275,49 @@ unsigned char loadWeights(float* weights) {
     return 0;
 }
 
+void drawVector(Mat* img, float* featureVector, unsigned int baseIndex, unsigned char index) {
+    const int width = 64;
+    *img = Mat::zeros(width, width, CV_32F);
+    for (int k = 0; k < 9; k++) {
+        unsigned int x = (unsigned int)(featureVector[baseIndex + k * 4 + index] * cosine[k] * width / 2 + width / 2);
+        unsigned int y = (unsigned int)(featureVector[baseIndex + k * 4 + index] * sine[k] * width / 2 + width / 2);
+
+        circle(
+            *img,
+            Point(width / 2, width / 2),
+            2,
+            Scalar(255),
+            2,
+            1,
+            0);
+        line(
+            *img,
+            Point(width / 2, width / 2),
+            Point(x, y),
+            Scalar(255),
+            1,
+            LINE_8
+        );
+    }
+}
 void drawFeatureVector(float* featureVector) {
     unsigned int i, j, k, x, y;
-    const int width = 64;
-    Mat img, img1, img2;
+    Mat img, img1, img2, img3[4], img4, img5;
 
-    for (i = 0; i < 14; i++) {
-        for (j = 0; j < 14; j++) {
-            if (!j) {
-                img = Mat::zeros(width, width, CV_32F);
-                for (k = 0; k < 9; k++) {
-                    x = (unsigned int)(featureVector[i * 126 + j * 36 + k] * cosine[k] * width + width / 2);
-                    y = (unsigned int)(featureVector[i * 126 + j * 36 + k] * sine[k] * width + width / 2);
-                    line(
-                        img,
-                        Point(width / 2, width / 2),
-                        Point(x, y),
-                        Scalar(255),
-                        1,
-                        LINE_8
-                    );
-                }
+    for (i = 0; i < 7; i++) {
+        for (j = 0; j < 7; j++) {
+            for (k = 0; k < 4; k++) {
+                drawVector(&img3[k], featureVector, i * 252 + j * 36, k);
+            }
+            hconcat(img3[0], img3[1], img4);
+            hconcat(img3[2], img3[3], img5);
+
+            if (j) {
+                vconcat(img4, img5, img1);
+                hconcat(img, img1, img);
             }
             else {
-                img1 = Mat::zeros(width, width, CV_32F);
-                for (k = 0; k < 9; k++) {
-                    x = (unsigned int)(featureVector[i * 126 + j * 36 + k] * cosine[k] * width + width / 2);
-                    y = (unsigned int)(featureVector[i * 126 + j * 36 + k] * sine[k] * width + width / 2);
-                    line(
-                        img1,
-                        Point(width / 2, width / 2),
-                        Point(x, y),
-                        Scalar(255),
-                        1,
-                        LINE_8
-                    );
-                }
-                hconcat(img, img1, img);
+                vconcat(img4, img5, img);
             }
         }
         if (img2.empty()) {
@@ -317,8 +328,8 @@ void drawFeatureVector(float* featureVector) {
         }
     }
 
-    // imshow("Display window", img2);
-    // waitKey(0); // Wait for a keystroke in the window
+    imshow("Display window", img2);
+    waitKey(0); // Wait for a keystroke in the window
 }
 
 int main(int argc, const char** argv)
@@ -422,3 +433,4 @@ int main(int argc, const char** argv)
     return -1;
 
 }
+
