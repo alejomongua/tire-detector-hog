@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <iostream>
-#include <dirent.h>
 #include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -10,6 +9,8 @@
 #include <cmath>
 #include <fstream>
 #include <omp.h>
+
+#include "listDir.hpp"
 
 using namespace std;
 using namespace cv;
@@ -43,37 +44,6 @@ const float sine[9] = {
     -0.342014,
 };
 float Cj[10];
-
-vector<string> getImages(const char* dirname)
-{
-    const unsigned int BATCH_SIZE = 896;
-    struct dirent* entry = NULL;
-    string filename;
-    DIR* dp = NULL;
-    int stringCounter = 0;
-    vector<string> output;
-
-    dp = opendir(dirname);
-
-    if (dp == NULL)
-    {
-        perror("Directorio incorrecto\n");
-        return vector<string>();
-    }
-
-    while ((entry = readdir(dp)))
-    {
-        filename = string(entry->d_name);
-
-        if (filename.find(".jpg") == -1)
-            continue;
-
-        output.push_back(filename);
-    }
-
-    closedir(dp);
-    return output;
-}
 
 int getFeatureVector(string path, float* featureVector) {
     unsigned int i, j, k, l, m, tempI, tempJ, baseIndex;
@@ -137,7 +107,7 @@ int getFeatureVector(string path, float* featureVector) {
                     float vJ = singleMagnitude * (singleAngle - Cj[valueJ]) / 20;
                     float vJp1 = singleMagnitude - vJ;
                     histogram[i][j][valueJ] += vJp1;
-                    histogram[i][j][valueJ + 1] += vJ;
+                    histogram[i][j][(valueJ + 1) % 9] += vJ;
                 }
             }
         }

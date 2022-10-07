@@ -12,14 +12,14 @@ SET(EXECUTABLE_OUTPUT_PATH ${dir})
 SET(LIBRARY_OUTPUT_PATH ${dir}lib)
 SET(CMAKE_CACHEFILE_DIR ${dir})
 
-# add_compile_definitions(NUM_THREADS=4)
+# add_compile_definitions(OMP_NUM_THREADS=4)
 
 project( TireDetector )
 find_package( OpenMP REQUIRED )
 find_package( OpenCV REQUIRED )
 include_directories( ${OpenCV_INCLUDE_DIRS} )
+add_library( listDir src/listDir.cpp )
 add_executable( TireDetector src/main.cpp )
 add_executable( Secuencial src/secuencial.cpp )
-target_link_libraries( TireDetector ${OpenCV_LIBS} OpenMP::OpenMP_CXX )
-target_link_libraries( Secuencial ${OpenCV_LIBS} )
-
+target_link_libraries( TireDetector listDir ${OpenCV_LIBS} OpenMP::OpenMP_CXX )
+target_link_libraries( Secuencial listDir ${OpenCV_LIBS} )
