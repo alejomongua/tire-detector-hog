@@ -158,13 +158,12 @@ int getFeatureVector(string path, float *featureVector)
 float predict(float *featureVector, float *weights)
 {
     float sum = weights[0];
-    unsigned int i;
 
 #pragma omp parallel num_threads(OMP_NUM_THREADS)
     {
         float tempSum = 0;
 
-        for (i = omp_get_thread_num(); i < FEATURE_VECTOR_SIZE; i += OMP_NUM_THREADS)
+        for (int i = omp_get_thread_num(); i < FEATURE_VECTOR_SIZE; i += OMP_NUM_THREADS)
         {
             tempSum += weights[i + 1] * featureVector[i];
         }
