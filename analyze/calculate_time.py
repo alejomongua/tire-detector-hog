@@ -1,3 +1,4 @@
+import statistics
 import subprocess
 import sys
 import time
@@ -27,8 +28,16 @@ def main(args):
         tiempo = ejecutar('build/Secuencial', args)
         tiempos_seq.append(tiempo)
 
-    print(tiempos_omp)
-    print(tiempos_seq)
+    # print(tiempos_omp)
+    # print(tiempos_seq)
+
+    stdev_omp = statistics.stdev(tiempos_omp)
+    stdev_seq = statistics.stdev(tiempos_seq)
+    mean_omp = statistics.mean(tiempos_omp)
+    mean_seq = statistics.mean(tiempos_seq)
+
+    print(f"Ejecución secuencial: promedio {mean_seq} s, stdev: {stdev_seq}")
+    print(f"Ejecución en paralelo: promedio {mean_omp} s, stdev: {stdev_omp}")
 
 
 if __name__ == '__main__':
