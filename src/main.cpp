@@ -191,7 +191,7 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float **feat
                         unsigned char *labels, float *weights)
 {
     unsigned int i, j, k;
-    float prediction, error;
+    float prediction, error, slope;
     float alpha = 0.001; // learning rate
     for (i = 0; i < FEATURE_VECTOR_SIZE + 1; i++)
     {
@@ -210,11 +210,12 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float **feat
         {
             prediction = predict(features[j], weights);
             error = labels[j] - prediction;
+            slope = alpha * error;
             // cout << "Error=" << error << endl;
-            weights[0] = weights[0] + alpha * error;
-            for (k = 0; k < FEATURE_VECTOR_SIZE; k++)
+            weights[0] = weights[0] + slope;
+            for (k = 1; k < FEATURE_VECTOR_SIZE + 1; k++)
             {
-                weights[k + 1] = weights[k + 1] + alpha * error * features[j][k];
+                weights[k] = weights[k] + slope * features[j][k - 1];
             }
             // costo += cost(labels[j], prediction);
         }
