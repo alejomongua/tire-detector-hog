@@ -157,15 +157,25 @@ int getFeatureVector(string path, float *featureVector)
 
 float predict(float *featureVector, float *weights)
 {
-    float sum = weights[0];
+    float sum[OMP_NUM_THREADS][16];
+    float totalSum = weights[0];
     unsigned int i;
 
-    for (i = 0; i < FEATURE_VECTOR_SIZE; i++)
+#pragma omp parallel num_threads(OMP_NUM_THREADS)
     {
-        sum += weights[i + 1] * featureVector[i];
-    }
+        int idThread = omp_get_thread_num();
+        sum[idThread][0] = 0;
 
-    return 1 / (1 + pow(EULER, -sum));
+        for (i = idThread; i < FEATURE_VECTOR_SIZE; i += OMP_NUM_THREADS)
+        {
+            sum[idThread][0] += weights[i + 1] * featureVector[i];
+        }
+    }
+    for (i = 0; i < OMP_NUM_THREADS; i++)
+    {
+        totalSum += sum[i][0];
+    }
+    return 1 / (1 + pow(EULER, -totalSum));
 }
 
 float cost(unsigned char label, float prediction)
@@ -324,7 +334,7 @@ int main(int argc, const char **argv)
     unsigned char *labels;
     char floatToStr[20];
 
-    cout << "Número de hilos: " << OMP_NUM_THREADS << endl;
+    // cout << "Número de hilos: " << OMP_NUM_THREADS << endl;
     for (i = 0; i < 10; i++)
     {
         Cj[i] = 20.0 * i;
