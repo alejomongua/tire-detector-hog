@@ -157,25 +157,22 @@ int getFeatureVector(string path, float *featureVector)
 
 float predict(float *featureVector, float *weights)
 {
-    float sum[OMP_NUM_THREADS][16];
-    float totalSum = weights[0];
+    float sum = weights[0];
     unsigned int i;
 
 #pragma omp parallel num_threads(OMP_NUM_THREADS)
     {
-        int idThread = omp_get_thread_num();
-        sum[idThread][0] = 0;
+        float tempSum = 0;
 
-        for (i = idThread; i < FEATURE_VECTOR_SIZE; i += OMP_NUM_THREADS)
+        for (i = omp_get_thread_num(); i < FEATURE_VECTOR_SIZE; i += OMP_NUM_THREADS)
         {
-            sum[idThread][0] += weights[i + 1] * featureVector[i];
+            tempSum += weights[i + 1] * featureVector[i];
         }
+
+        sum += tempSum;
     }
-    for (i = 0; i < OMP_NUM_THREADS; i++)
-    {
-        totalSum += sum[i][0];
-    }
-    return 1 / (1 + pow(EULER, -totalSum));
+
+    return 1 / (1 + pow(EULER, -sum));
 }
 
 float cost(unsigned char label, float prediction)
