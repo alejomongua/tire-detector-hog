@@ -76,8 +76,7 @@ int getFeatureVector(string path, float *featureVector)
     cartToPolar(gx, gy, mag, angle, 1);
 
     // Process 8 x 8 blocks
-#pragma omp parallel num_threads(OMP_NUM_THREADS)
-    for (int i = omp_get_thread_num(); i < 8; i += OMP_NUM_THREADS)
+    for (int i = 0; i < 8; i++)
     {
         for (int j = 0; j < 8; j++)
         {
@@ -119,8 +118,7 @@ int getFeatureVector(string path, float *featureVector)
     }
 
     // Normalize
-#pragma omp parallel num_threads(OMP_NUM_THREADS)
-    for (int i = omp_get_thread_num(); i < 7; i += OMP_NUM_THREADS)
+    for (int i = 0; i < 7; i++)
     {
         for (int j = 0; j < 7; j++)
         {
@@ -159,16 +157,9 @@ float predict(float *featureVector, float *weights)
 {
     float sum = weights[0];
 
-#pragma omp parallel num_threads(OMP_NUM_THREADS)
+    for (int i = 0; i < FEATURE_VECTOR_SIZE; i++)
     {
-        float tempSum = 0;
-
-        for (int i = omp_get_thread_num(); i < FEATURE_VECTOR_SIZE; i += OMP_NUM_THREADS)
-        {
-            tempSum += weights[i + 1] * featureVector[i];
-        }
-
-        sum += tempSum;
+        sum += weights[i + 1] * featureVector[i];
     }
 
     return 1 / (1 + pow(EULER, -sum));
@@ -358,7 +349,9 @@ int main(int argc, const char **argv)
 
         labels = (unsigned char *)malloc(sizeof(unsigned char) * totalSize);
 
-        for (i = 0; i < tireImagesVectorSize; i++)
+#pragma omp parallel num_threads(OMP_NUM_THREADS)
+        for (int i = omp_get_thread_num(); i < tireImagesVectorSize; i += OMP_NUM_THREADS)
+        // for (i = 0; i < tireImagesVectorSize; i++)
         {
             features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(tiresPath) + tireImagePaths[i],
@@ -366,7 +359,9 @@ int main(int argc, const char **argv)
             labels[i] = 1;
         }
 
-        for (i = tireImagesVectorSize; i < totalSize; i++)
+#pragma omp parallel num_threads(OMP_NUM_THREADS)
+        for (int i = tireImagesVectorSize + omp_get_thread_num(); i < totalSize; i += OMP_NUM_THREADS)
+        // for (i = tireImagesVectorSize; i < totalSize; i++)
         {
             features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
