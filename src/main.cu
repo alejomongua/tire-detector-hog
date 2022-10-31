@@ -116,13 +116,17 @@ int getFeatureVector(string path, float *featureVector)
 
     // Resize image
     resize(img, resizedImg, Size(64, 64));
+    img.release();
 
     // Calculate gradients
     cv::Sobel(resizedImg, gx, CV_32F, 1, 0, 1);
     cv::Sobel(resizedImg, gy, CV_32F, 0, 1, 1);
+    resizedImg.release();
 
     // Convert to polar
     cv::cartToPolar(gx, gy, mag, angle, 1);
+    gx.release();
+    gy.release();
 
     // Usar código de CUDA
     // Allocate memory
@@ -168,6 +172,8 @@ int getFeatureVector(string path, float *featureVector)
         fprintf(stderr, "Failed to copy vector magnitudes from host to device (error: %s)!\n", cudaGetErrorString(err));
         std::exit(EXIT_FAILURE);
     }
+    angle.release();
+    mag.release();
 
     // Launch kernel
     computeHistograms<<<8, 8>>>(d_angle, d_mag, d_histogram);
@@ -183,6 +189,32 @@ int getFeatureVector(string path, float *featureVector)
     {
         fprintf(stderr, "Failed to copy histograms from device to host (error: %s)!\n", cudaGetErrorString(err));
         std::exit(EXIT_FAILURE);
+    }
+
+    // Free device global memory
+    err = cudaFree(d_angle);
+
+    if (err != cudaSuccess)
+    {
+        fprintf(stderr, "Failed to free device vector angles (error: %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+
+    // Free device global memory
+    err = cudaFree(d_mag);
+
+    if (err != cudaSuccess)
+    {
+        fprintf(stderr, "Failed to free device vector magnitudes (error: %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+    // Free device global memory
+    err = cudaFree(d_histogram);
+
+    if (err != cudaSuccess)
+    {
+        fprintf(stderr, "Failed to free device histograms (error: %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
     }
 
     // Normalize
@@ -218,6 +250,8 @@ int getFeatureVector(string path, float *featureVector)
             }
         }
     }
+
+    std::free(h_histogram);
     return 0;
 }
 
@@ -442,6 +476,13 @@ int main(int argc, const char **argv)
         }
 
         trainLogRegression(epochs, totalSize, features, labels, weights);
+
+        for (i = 0; i < totalSize; i++)
+        {
+            std::free(features[i]);
+        }
+        std::free(features);
+        std::free(labels);
 
         ofstream weightsFile(WEIGHTS_FILE_PATH, ios::out);
         if (!weightsFile.is_open())

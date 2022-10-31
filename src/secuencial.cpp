@@ -62,13 +62,17 @@ int getFeatureVector(string path, float *featureVector)
 
     // Resize image
     resize(img, resizedImg, Size(64, 64));
+    img.release();
 
     // Calculate gradients
     Sobel(resizedImg, gx, CV_32F, 1, 0, 1);
     Sobel(resizedImg, gy, CV_32F, 0, 1, 1);
+    resizedImg.release();
 
     // Convert to polar
     cartToPolar(gx, gy, mag, angle, 1);
+    gx.release();
+    gy.release();
 
     // Process 8 x 8 blocks
     for (int i = 0; i < 8; i++)
@@ -112,6 +116,8 @@ int getFeatureVector(string path, float *featureVector)
         }
     }
 
+    angle.release();
+    mag.release();
     // Normalize
     for (int i = 0; i < 7; i++)
     {
@@ -267,7 +273,7 @@ void drawVector(Mat *img, float *featureVector, unsigned int baseIndex, unsigned
 }
 void drawFeatureVector(float *featureVector)
 {
-    unsigned int i, j, k, x, y;
+    unsigned int i, j, k;
     Mat img, img1, img2, img3[4], img4, img5;
 
     for (i = 0; i < 7; i++)
@@ -302,7 +308,7 @@ void drawFeatureVector(float *featureVector)
     }
 
     imshow("Display window", img2);
-    waitKey(0); // Wait for a keystroke in the window
+    cv::waitKey(0); // Wait for a keystroke in the window
 }
 
 int main(int argc, const char **argv)
@@ -310,7 +316,7 @@ int main(int argc, const char **argv)
     const char *nonTiresPath;
     const char *tiresPath;
     vector<string> tireImagePaths, noTireImagePaths;
-    unsigned int i = 0, j = 0, k, epochs;
+    unsigned int i = 0, epochs;
     unsigned int tireImagesVectorSize, noTireImagesVectorSize, totalSize;
     float featureVector[FEATURE_VECTOR_SIZE], weights[FEATURE_VECTOR_SIZE + 1];
     float prediction;
@@ -361,6 +367,13 @@ int main(int argc, const char **argv)
         }
 
         trainLogRegression(epochs, totalSize, features, labels, weights);
+
+        for (i = 0; i < totalSize; i++)
+        {
+            std::free(features[i]);
+        }
+        std::free(features);
+        std::free(labels);
 
         ofstream weightsFile(WEIGHTS_FILE_PATH, ios::out);
         if (!weightsFile.is_open())
