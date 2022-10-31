@@ -117,6 +117,16 @@ int getFeatureVector(string path, float *featureVector)
         }
     }
 
+    /*
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 8; j++)
+            for (int k = 0; k < 9; k++)
+                cout << histogram[i][j][k] << "  ";
+        cout << endl;
+    }
+    */
+
     // Normalize
     for (int i = 0; i < 7; i++)
     {
