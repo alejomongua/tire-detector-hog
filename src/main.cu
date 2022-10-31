@@ -66,17 +66,17 @@ __constant__ float Cj[10];
 __global__ void computeHistograms(float *angle, float *mag, float *features, int totalExamples)
 {
     int index = blockDim.x * blockIdx.x + threadIdx.x;
-    float histogram[8][8][9];
 
     for (int _i = index; _i < totalExamples; _i += NUMBER_OF_BLOCKS * NUMBER_OF_THREADS)
     {
+        float histogram[CELLS_X][CELLS_Y][BINS];
         // Process 8 x 8 blocks
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < CELLS_X; i++)
         {
-            for (int j = 0; j < 8; j++)
+            for (int j = 0; j < CELLS_Y; j++)
             {
                 // Initialize histogram:
-                for (int k = 0; k < 9; k++)
+                for (int k = 0; k < BINS; k++)
                 {
                     histogram[i][j][k] = 0.0;
                 }
@@ -86,9 +86,9 @@ __global__ void computeHistograms(float *angle, float *mag, float *features, int
                 {
                     for (int l = 0; l < 8; l++)
                     {
-                        unsigned int coordX = k + i * 8;
-                        unsigned int coordY = l + j * 8;
-                        unsigned int index = _i * FEATURE_VECTOR_SIZE + coordX * 64 + coordY;
+                        unsigned int coordX = k + i * CELL_SIZE;
+                        unsigned int coordY = l + j * CELL_SIZE;
+                        unsigned int index = _i * X_DIM * Y_DIM + coordX * Y_DIM + coordY;
                         float singleAngle = angle[index];
                         float singleMagnitude = mag[index];
                         if (singleAngle >= 180.0)
@@ -107,7 +107,7 @@ __global__ void computeHistograms(float *angle, float *mag, float *features, int
                         }
                         else
                         {
-                            histogram[i][j][(valueJ + 1) % 9] += vJ;
+                            histogram[i][j][(valueJ + 1) % BINS] += vJ;
                         }
                     }
                 }
@@ -115,14 +115,14 @@ __global__ void computeHistograms(float *angle, float *mag, float *features, int
         }
 
         // Normalize
-        for (int i = 0; i < 7; i++)
+        for (int i = 0; i < CELLS_X - 1; i++)
         {
-            for (int j = 0; j < 7; j++)
+            for (int j = 0; j < CELLS_Y - 1; j++)
             {
                 // baseIndex needs to be calculated only once
-                unsigned int baseIndex = _i * FEATURE_VECTOR_SIZE + i * 252 + j * 36;
+                unsigned int baseIndex = _i * FEATURE_VECTOR_SIZE + i * (CELLS_Y - 1) * BINS * 4 + j * BINS * 4;
                 float powerSum = 0.0;
-                for (int m = 0; m < 9; m++)
+                for (int m = 0; m < BINS; m++)
                 {
                     // Square root of sum of squares
                     powerSum += pow(histogram[i][j][m], 2) +
@@ -132,7 +132,7 @@ __global__ void computeHistograms(float *angle, float *mag, float *features, int
                 }
                 float norm = sqrt(powerSum);
 
-                for (int m = 0; m < 9; m++)
+                for (int m = 0; m < BINS; m++)
                 {
                     // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
                     // 36 * 7 = 252
@@ -199,33 +199,35 @@ void getFeatureVector(float *h_magVectors, float *h_anglesVectors, float *h_feat
     float *d_angle = NULL;
     float *d_mag = NULL;
     float *d_features = NULL;
+    int dims = X_DIM * Y_DIM * totalExamples * sizeof(float);
+    int fVectorDims = FEATURE_VECTOR_SIZE * totalExamples * sizeof(float);
 
     checkCuda(
         cudaMalloc(
-            (void **)&d_angle, X_DIM * Y_DIM * totalExamples * sizeof(float)),
+            (void **)&d_angle, dims),
         "Failed to allocate device vector angles");
 
     checkCuda(
         cudaMalloc(
-            (void **)&d_mag, X_DIM * Y_DIM * totalExamples * sizeof(float)),
+            (void **)&d_mag, dims),
         "Failed to allocate device vector magnitude");
 
     checkCuda(
         cudaMalloc(
-            (void **)&d_features, totalExamples * X_DIM * Y_DIM * sizeof(float)),
+            (void **)&d_features, fVectorDims),
         "Failed to allocate device feature vector");
 
     // Pass parameters
     checkCuda(
         cudaMemcpy(
             d_angle,
-            h_anglesVectors, X_DIM * Y_DIM * sizeof(float), cudaMemcpyHostToDevice),
+            h_anglesVectors, dims, cudaMemcpyHostToDevice),
         "Failed to copy vector angles from host ");
 
     checkCuda(
         cudaMemcpy(
             d_mag,
-            h_magVectors, X_DIM * Y_DIM * sizeof(float), cudaMemcpyHostToDevice),
+            h_magVectors, dims, cudaMemcpyHostToDevice),
         "Failed to copy vector magnitudes from host");
 
     // Launch kernel
@@ -235,7 +237,7 @@ void getFeatureVector(float *h_magVectors, float *h_anglesVectors, float *h_feat
 
     checkCuda(
         cudaMemcpy(
-            h_features, d_features, FEATURE_VECTOR_SIZE * sizeof(float), cudaMemcpyDeviceToHost),
+            h_features, d_features, fVectorDims, cudaMemcpyDeviceToHost),
         "Failed to copy features from device to host");
 
     // Free device global memory
@@ -290,7 +292,7 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float *featu
         // float costo = 0;
         for (j = 0; j < examples; j++)
         {
-            prediction = predict(features + j * FEATURE_VECTOR_SIZE, weights);
+            prediction = predict(&features[j * FEATURE_VECTOR_SIZE], weights);
             error = labels[j] - prediction;
             slope = alpha * error;
             // cout << "Error=" << error << endl;
@@ -369,13 +371,13 @@ void drawFeatureVector(float *featureVector)
     unsigned int i, j, k;
     Mat img, img1, img2, img3[4], img4, img5;
 
-    for (i = 0; i < 7; i++)
+    for (i = 0; i < (CELLS_X - 1); i++)
     {
-        for (j = 0; j < 7; j++)
+        for (j = 0; j < (CELLS_Y - 1); j++)
         {
             for (k = 0; k < 4; k++)
             {
-                drawVector(&img3[k], featureVector, i * 252 + j * 36, k);
+                drawVector(&img3[k], featureVector, i * (CELLS_Y - 1) * BINS * 4 + j * BINS * 4, k);
             }
             hconcat(img3[0], img3[1], img4);
             hconcat(img3[2], img3[3], img5);
