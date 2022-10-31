@@ -29,7 +29,7 @@ const float cosine[9] = {
     -0.173652,
     -0.500004,
     -0.766048,
-    -0.939695};
+    -0.939695 };
 const float sine[9] = {
     0,
     -0.342021,
@@ -43,7 +43,7 @@ const float sine[9] = {
 };
 float Cj[10];
 
-int getFeatureVector(string path, float *featureVector)
+int getFeatureVector(string path, float* featureVector)
 {
     Mat img, resizedImg, gx, gy, mag, angle;
     float histogram[8][8][9];
@@ -130,9 +130,9 @@ int getFeatureVector(string path, float *featureVector)
             {
                 // Square root of sum of squares
                 powerSum += pow(histogram[i][j][m], 2) +
-                            pow(histogram[i + 1][j][m], 2) +
-                            pow(histogram[i][j + 1][m], 2) +
-                            pow(histogram[i + 1][j + 1][m], 2);
+                    pow(histogram[i + 1][j][m], 2) +
+                    pow(histogram[i][j + 1][m], 2) +
+                    pow(histogram[i + 1][j + 1][m], 2);
             }
             float norm = sqrt(powerSum);
 
@@ -154,7 +154,7 @@ int getFeatureVector(string path, float *featureVector)
     return 0;
 }
 
-float predict(float *featureVector, float *weights)
+float predict(float* featureVector, float* weights)
 {
     float sum = weights[0];
     unsigned int i;
@@ -176,8 +176,8 @@ float cost(unsigned char label, float prediction)
     return -cost1 - cost2;
 }
 
-void trainLogRegression(unsigned int epochs, unsigned int examples, float **features,
-                        unsigned char *labels, float *weights)
+void trainLogRegression(unsigned int epochs, unsigned int examples, float** features,
+    unsigned char* labels, float* weights)
 {
     unsigned int i, j, k;
     float prediction, error, slope;
@@ -217,7 +217,7 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float **feat
  * it returns 1 if there are no weights or 0 if
  * weights are loaded
  */
-unsigned char loadWeights(float *weights)
+unsigned char loadWeights(float* weights)
 {
     char floatToStr[20];
     unsigned int i = 0, j = 0;
@@ -245,7 +245,7 @@ unsigned char loadWeights(float *weights)
     return 0;
 }
 
-void drawVector(Mat *img, float *featureVector, unsigned int baseIndex, unsigned char index)
+void drawVector(Mat* img, float* featureVector, unsigned int baseIndex, unsigned char index)
 {
     const int width = 64;
     *img = Mat::zeros(width, width, CV_32F);
@@ -271,7 +271,7 @@ void drawVector(Mat *img, float *featureVector, unsigned int baseIndex, unsigned
             LINE_8);
     }
 }
-void drawFeatureVector(float *featureVector)
+void drawFeatureVector(float* featureVector)
 {
     unsigned int i, j, k;
     Mat img, img1, img2, img3[4], img4, img5;
@@ -307,21 +307,21 @@ void drawFeatureVector(float *featureVector)
         }
     }
 
-    imshow("Display window", img2);
-    cv::waitKey(0); // Wait for a keystroke in the window
+    // imshow("Display window", img2);
+    // cv::waitKey(0); // Wait for a keystroke in the window
 }
 
-int main(int argc, const char **argv)
+int main(int argc, const char** argv)
 {
-    const char *nonTiresPath;
-    const char *tiresPath;
+    const char* nonTiresPath;
+    const char* tiresPath;
     vector<string> tireImagePaths, noTireImagePaths;
     unsigned int i = 0, epochs;
     unsigned int tireImagesVectorSize, noTireImagesVectorSize, totalSize;
     float featureVector[FEATURE_VECTOR_SIZE], weights[FEATURE_VECTOR_SIZE + 1];
     float prediction;
-    float **features;
-    unsigned char *labels;
+    float** features;
+    unsigned char* labels;
     char floatToStr[20];
 
     for (i = 0; i < 10; i++)
@@ -346,23 +346,23 @@ int main(int argc, const char **argv)
         tireImagesVectorSize = tireImagePaths.size();
         noTireImagesVectorSize = noTireImagePaths.size();
         totalSize = tireImagesVectorSize + noTireImagesVectorSize;
-        features = (float **)malloc(sizeof(float *) * totalSize);
+        features = (float**)malloc(sizeof(float*) * totalSize);
 
-        labels = (unsigned char *)malloc(sizeof(unsigned char) * totalSize);
+        labels = (unsigned char*)malloc(sizeof(unsigned char) * totalSize);
 
         for (i = 0; i < tireImagesVectorSize; i++)
         {
-            features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(tiresPath) + tireImagePaths[i],
-                             features[i]);
+                features[i]);
             labels[i] = 1;
         }
 
         for (i = tireImagesVectorSize; i < totalSize; i++)
         {
-            features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
-                             features[i]);
+                features[i]);
             labels[i] = 0;
         }
 
@@ -400,8 +400,8 @@ int main(int argc, const char **argv)
         if (loadWeights(weights))
         {
             cerr << "You must train model first, pass two folders: the "
-                 << "first one containing tires images and the second one "
-                 << "containing non-tires images" << endl;
+                << "first one containing tires images and the second one "
+                << "containing non-tires images" << endl;
             return -1;
         }
         getFeatureVector(string(argv[1]), featureVector);
@@ -411,18 +411,18 @@ int main(int argc, const char **argv)
         if (prediction > 0.5)
         {
             printf("This picture represents a tire, confidence: %.1f%%",
-                   prediction * 100);
+                prediction * 100);
             cout << endl;
             return 0;
         }
         printf("This picture does not represent a tire, confidence: %.1f%%",
-               (1 - prediction) * 100);
+            (1 - prediction) * 100);
         cout << endl;
         return 0;
     }
 
     cerr << "You must pass either a path containing an image or two paths: "
-         << "the first one containing tires images and the second one "
-         << "containing non-tires images" << endl;
+        << "the first one containing tires images and the second one "
+        << "containing non-tires images" << endl;
     return -1;
 }

@@ -30,7 +30,7 @@ const float cosine[9] = {
     -0.173652,
     -0.500004,
     -0.766048,
-    -0.939695};
+    -0.939695 };
 const float sine[9] = {
     0,
     -0.342021,
@@ -44,7 +44,7 @@ const float sine[9] = {
 };
 __constant__ float Cj[10];
 
-__global__ void computeHistograms(float *angle, float *mag, float *hist)
+__global__ void computeHistograms(float* angle, float* mag, float* hist, float* features)
 {
     int i = blockIdx.x;
     int j = threadIdx.x;
@@ -93,14 +93,45 @@ __global__ void computeHistograms(float *angle, float *mag, float *hist)
     {
         hist[i * 8 * 9 + j * 9 + k] = histogram[k];
     }
+
+    __syncthreads();
+
+
+    // Normalize
+    if (i < 7 && j < 7)
+    {
+        // baseIndex needs to be calculated only once
+        unsigned int baseIndex = i * 252 + j * 36;
+        float powerSum = 0.0;
+        for (int m = 0; m < 9; m++)
+        {
+            // Square root of sum of squares
+            powerSum += pow(hist[i * 8 * 9 + j * 9 + m], 2) +
+                pow(hist[(i + 1) * 8 * 9 + j * 9 + m], 2) +
+                pow(hist[i * 8 * 9 + (j + 1) * 8 + m], 2) +
+                pow(hist[(i + 1) * 8 * 9 + (j + 1) * 8 + m], 2);
+        }
+        float norm = sqrt(powerSum);
+
+        for (int m = 0; m < 9; m++)
+        {
+            // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
+            // 36 * 7 = 252
+            features[baseIndex + m * 4] =
+                hist[i * 8 * 9 + j * 9 + m] / (norm + EPSILON);
+            features[baseIndex + m * 4 + 1] =
+                hist[(i + 1) * 8 * 9 + j * 9 + m] / (norm + EPSILON);
+            features[baseIndex + m * 4 + 2] =
+                hist[i * 8 * 9 + (j + 1) * 8 + m] / (norm + EPSILON);
+            features[baseIndex + m * 4 + 3] =
+                hist[(i + 1) * 8 * 9 + (j + 1) * 8 + m] / (norm + EPSILON);
+        }
+    }
 }
 
-int getFeatureVector(string path, float *featureVector)
+int getFeatureVector(string path, float* h_features)
 {
     Mat img, resizedImg, gx, gy, mag, angle;
-
-    // Allocate the host output vector C
-    float *h_histogram = (float *)malloc(8 * 8 * 9 * sizeof(float));
 
     // Load images in an opencv matrix in gray scale
     img = imread(path, IMREAD_GRAYSCALE);
@@ -130,16 +161,16 @@ int getFeatureVector(string path, float *featureVector)
 
     // Usar código de CUDA
     // Allocate memory
-    float *d_angle = NULL;
-    cudaError_t err = cudaMalloc((void **)&d_angle, 64 * 64 * sizeof(float));
+    float* d_angle = NULL;
+    cudaError_t err = cudaMalloc((void**)&d_angle, 64 * 64 * sizeof(float));
     if (err != cudaSuccess)
     {
         fprintf(stderr, "Failed to allocate device vector angles (error: %s)!\n", cudaGetErrorString(err));
         std::exit(EXIT_FAILURE);
     }
 
-    float *d_mag = NULL;
-    err = cudaMalloc((void **)&d_mag, 64 * 64 * sizeof(float));
+    float* d_mag = NULL;
+    err = cudaMalloc((void**)&d_mag, 64 * 64 * sizeof(float));
 
     if (err != cudaSuccess)
     {
@@ -147,8 +178,17 @@ int getFeatureVector(string path, float *featureVector)
         std::exit(EXIT_FAILURE);
     }
 
-    float *d_histogram = NULL;
-    err = cudaMalloc((void **)&d_histogram, 8 * 8 * 9 * sizeof(float));
+    float* d_histogram = NULL;
+    err = cudaMalloc((void**)&d_histogram, 8 * 8 * 9 * sizeof(float));
+
+    if (err != cudaSuccess)
+    {
+        fprintf(stderr, "Failed to allocate device vector C (error: %s)!\n", cudaGetErrorString(err));
+        std::exit(EXIT_FAILURE);
+    }
+
+    float* d_features = NULL;
+    err = cudaMalloc((void**)&d_features, 8 * 8 * 9 * sizeof(float));
 
     if (err != cudaSuccess)
     {
@@ -157,7 +197,7 @@ int getFeatureVector(string path, float *featureVector)
     }
 
     // Pass parameters
-    err = cudaMemcpy(d_angle, (float *)angle.data, 64 * 64 * sizeof(float), cudaMemcpyHostToDevice);
+    err = cudaMemcpy(d_angle, (float*)angle.data, 64 * 64 * sizeof(float), cudaMemcpyHostToDevice);
 
     if (err != cudaSuccess)
     {
@@ -165,7 +205,7 @@ int getFeatureVector(string path, float *featureVector)
         std::exit(EXIT_FAILURE);
     }
 
-    err = cudaMemcpy(d_mag, (float *)mag.data, 64 * 64 * sizeof(float), cudaMemcpyHostToDevice);
+    err = cudaMemcpy(d_mag, (float*)mag.data, 64 * 64 * sizeof(float), cudaMemcpyHostToDevice);
 
     if (err != cudaSuccess)
     {
@@ -176,7 +216,7 @@ int getFeatureVector(string path, float *featureVector)
     mag.release();
 
     // Launch kernel
-    computeHistograms<<<8, 8>>>(d_angle, d_mag, d_histogram);
+    computeHistograms << <8, 8 >> > (d_angle, d_mag, d_histogram, d_features);
     err = cudaGetLastError();
     if (err != cudaSuccess)
     {
@@ -184,10 +224,10 @@ int getFeatureVector(string path, float *featureVector)
         std::exit(EXIT_FAILURE);
     }
 
-    err = cudaMemcpy(h_histogram, d_histogram, 8 * 8 * 9 * sizeof(float), cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(h_features, d_features, FEATURE_VECTOR_SIZE, cudaMemcpyDeviceToHost);
     if (err != cudaSuccess)
     {
-        fprintf(stderr, "Failed to copy histograms from device to host (error: %s)!\n", cudaGetErrorString(err));
+        fprintf(stderr, "Failed to copy features from device to host (error: %s)!\n", cudaGetErrorString(err));
         std::exit(EXIT_FAILURE);
     }
 
@@ -216,46 +256,19 @@ int getFeatureVector(string path, float *featureVector)
         fprintf(stderr, "Failed to free device histograms (error: %s)!\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
+    // Free device global memory
+    err = cudaFree(d_features);
 
-    // Normalize
-    for (int i = 0; i < 7; i++)
+    if (err != cudaSuccess)
     {
-        for (int j = 0; j < 7; j++)
-        {
-            // baseIndex needs to be calculated only once
-            unsigned int baseIndex = i * 252 + j * 36;
-            float powerSum = 0.0;
-            for (int m = 0; m < 9; m++)
-            {
-                // Square root of sum of squares
-                powerSum += pow(h_histogram[i * 8 * 9 + j * 9 + m], 2) +
-                            pow(h_histogram[(i + 1) * 8 * 9 + j * 9 + m], 2) +
-                            pow(h_histogram[i * 8 * 9 + (j + 1) * 8 + m], 2) +
-                            pow(h_histogram[(i + 1) * 8 * 9 + (j + 1) * 8 + m], 2);
-            }
-            float norm = sqrt(powerSum);
-
-            for (int m = 0; m < 9; m++)
-            {
-                // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
-                // 36 * 7 = 252
-                featureVector[baseIndex + m * 4] =
-                    h_histogram[i * 8 * 9 + j * 9 + m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 1] =
-                    h_histogram[(i + 1) * 8 * 9 + j * 9 + m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 2] =
-                    h_histogram[i * 8 * 9 + (j + 1) * 8 + m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 3] =
-                    h_histogram[(i + 1) * 8 * 9 + (j + 1) * 8 + m] / (norm + EPSILON);
-            }
-        }
+        fprintf(stderr, "Failed to free device features (error: %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
     }
 
-    std::free(h_histogram);
     return 0;
 }
 
-float predict(float *featureVector, float *weights)
+float predict(float* featureVector, float* weights)
 {
     float sum = weights[0];
 
@@ -276,8 +289,8 @@ float cost(unsigned char label, float prediction)
     return -cost1 - cost2;
 }
 
-void trainLogRegression(unsigned int epochs, unsigned int examples, float **features,
-                        unsigned char *labels, float *weights)
+void trainLogRegression(unsigned int epochs, unsigned int examples, float** features,
+    unsigned char* labels, float* weights)
 {
     unsigned int i, j, k;
     float prediction, error, slope;
@@ -313,11 +326,11 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float **feat
 }
 
 /*
- * This function loads weights from weights file
- * it returns 1 if there are no weights or 0 if
- * weights are loaded
- */
-unsigned char loadWeights(float *weights)
+* This function loads weights from weights file
+* it returns 1 if there are no weights or 0 if
+* weights are loaded
+*/
+unsigned char loadWeights(float* weights)
 {
     char floatToStr[20];
     unsigned int i = 0, j = 0;
@@ -345,7 +358,7 @@ unsigned char loadWeights(float *weights)
     return 0;
 }
 
-void drawVector(Mat *img, float *featureVector, unsigned int baseIndex, unsigned char index)
+void drawVector(Mat* img, float* featureVector, unsigned int baseIndex, unsigned char index)
 {
     const int width = 64;
     *img = Mat::zeros(width, width, CV_32F);
@@ -371,7 +384,7 @@ void drawVector(Mat *img, float *featureVector, unsigned int baseIndex, unsigned
             LINE_8);
     }
 }
-void drawFeatureVector(float *featureVector)
+void drawFeatureVector(float* featureVector)
 {
     unsigned int i, j, k;
     Mat img, img1, img2, img3[4], img4, img5;
@@ -411,17 +424,17 @@ void drawFeatureVector(float *featureVector)
     cv::waitKey(0); // Wait for a keystroke in the window
 }
 
-int main(int argc, const char **argv)
+int main(int argc, const char** argv)
 {
-    const char *nonTiresPath;
-    const char *tiresPath;
+    const char* nonTiresPath;
+    const char* tiresPath;
     vector<string> tireImagePaths, noTireImagePaths;
     unsigned int i, epochs;
     unsigned int tireImagesVectorSize, noTireImagesVectorSize, totalSize;
     float featureVector[FEATURE_VECTOR_SIZE], weights[FEATURE_VECTOR_SIZE + 1];
     float prediction;
-    float **features;
-    unsigned char *labels;
+    float** features;
+    unsigned char* labels;
     char floatToStr[20];
     float h_Cj[10];
 
@@ -455,23 +468,23 @@ int main(int argc, const char **argv)
         tireImagesVectorSize = tireImagePaths.size();
         noTireImagesVectorSize = noTireImagePaths.size();
         totalSize = tireImagesVectorSize + noTireImagesVectorSize;
-        features = (float **)malloc(sizeof(float *) * totalSize);
+        features = (float**)malloc(sizeof(float*) * totalSize);
 
-        labels = (unsigned char *)malloc(sizeof(unsigned char) * totalSize);
+        labels = (unsigned char*)malloc(sizeof(unsigned char) * totalSize);
 
         for (i = 0; i < tireImagesVectorSize; i++)
         {
-            features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(tiresPath) + tireImagePaths[i],
-                             features[i]);
+                features[i]);
             labels[i] = 1;
         }
 
         for (i = tireImagesVectorSize; i < totalSize; i++)
         {
-            features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+            features[i] = (float*)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
             getFeatureVector(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
-                             features[i]);
+                features[i]);
             labels[i] = 0;
         }
 
@@ -509,8 +522,8 @@ int main(int argc, const char **argv)
         if (loadWeights(weights))
         {
             cerr << "You must train model first, pass two folders: the "
-                 << "first one containing tires images and the second one "
-                 << "containing non-tires images" << endl;
+                << "first one containing tires images and the second one "
+                << "containing non-tires images" << endl;
             return -1;
         }
         getFeatureVector(string(argv[1]), featureVector);
@@ -520,18 +533,18 @@ int main(int argc, const char **argv)
         if (prediction > 0.5)
         {
             printf("This picture represents a tire, confidence: %.1f%%",
-                   prediction * 100);
+                prediction * 100);
             cout << endl;
             return 0;
         }
         printf("This picture does not represent a tire, confidence: %.1f%%",
-               (1 - prediction) * 100);
+            (1 - prediction) * 100);
         cout << endl;
         return 0;
     }
 
     cerr << "You must pass either a path containing an image or two paths: "
-         << "the first one containing tires images and the second one "
-         << "containing non-tires images" << endl;
+        << "the first one containing tires images and the second one "
+        << "containing non-tires images" << endl;
     return -1;
 }
