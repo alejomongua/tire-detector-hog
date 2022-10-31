@@ -21,6 +21,15 @@ using namespace cv;
 #define EULER 2.71828
 #define EPOCHS 100
 #define WEIGHTS_FILE_PATH "weights.data"
+#define X_DIM 64
+#define Y_DIM 64
+#define CELL_SIZE 8
+#define BINS 9
+#define CELLS_X X_DIM / CELL_SIZE
+#define CELLS_Y Y_DIM / CELL_SIZE
+#define NUMBER_OF_BLOCKS 6
+#define NUMBER_OF_THREADS 128
+
 const float cosine[9] = {
     1,
     0.939692,
@@ -42,72 +51,119 @@ const float sine[9] = {
     -0.642783,
     -0.342014,
 };
-__constant__ float Cj[10];
 
-__global__ void computeHistograms(float *angle, float *mag, float *hist)
+inline void checkCuda(cudaError_t err, const char *message)
 {
-    int i = blockIdx.x;
-    int j = threadIdx.x;
-
-    float histogram[9];
-
-    // Initialize histogram:
-    for (int k = 0; k < 9; k++)
+    if (err != cudaSuccess)
     {
-        histogram[k] = 0.0;
-    }
-
-    // Fill histogram
-    for (int k = 0; k < 8; k++)
-    {
-        for (int l = 0; l < 8; l++)
-        {
-            unsigned int coordX = k + i * 8;
-            unsigned int coordY = l + j * 8;
-            unsigned int index = coordX * 64 + coordY;
-            float singleAngle = angle[index];
-            float singleMagnitude = mag[index];
-            if (singleAngle >= 180.0)
-            {
-                singleAngle = singleAngle - 180;
-                singleMagnitude = -singleMagnitude;
-            }
-            unsigned char valueJ = (unsigned char)(singleAngle / 20);
-            float vJ = singleMagnitude * (singleAngle - Cj[valueJ]) / 20;
-            float vJp1 = singleMagnitude - vJ;
-            histogram[valueJ] += vJp1;
-            // If valueJ is the last index, it should be 0 and change its sign
-            if (valueJ == 8)
-            {
-                histogram[0] -= vJ;
-            }
-            else
-            {
-                histogram[(valueJ + 1) % 9] += vJ;
-            }
-        }
-    }
-
-    // Copy histogram to main GPU memory:
-    for (int k = 0; k < 9; k++)
-    {
-        hist[i * 8 * 9 + j * 9 + k] = histogram[k];
+        fprintf(stderr, "%s (error: %s)!\n", message, cudaGetErrorString(err));
+        std::exit(EXIT_FAILURE);
     }
 }
 
-int getFeatureVector(string path, float *featureVector)
-{
-    Mat img, resizedImg, gx, gy, mag, angle;
+__constant__ float Cj[10];
 
-    // Allocate the host output vector C
-    float *h_histogram = (float *)malloc(8 * 8 * 9 * sizeof(float));
+__global__ void computeHistograms(float *angle, float *mag, float *features, int totalExamples)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    float histogram[8][8][9];
+
+    for (int _i = index; _i < totalExamples; _i += NUMBER_OF_BLOCKS * NUMBER_OF_THREADS)
+    {
+        // Process 8 x 8 blocks
+        for (int i = 0; i < 8; i++)
+        {
+            for (int j = 0; j < 8; j++)
+            {
+                // Initialize histogram:
+                for (int k = 0; k < 9; k++)
+                {
+                    histogram[i][j][k] = 0.0;
+                }
+
+                // Fill histogram
+                for (int k = 0; k < 8; k++)
+                {
+                    for (int l = 0; l < 8; l++)
+                    {
+                        unsigned int coordX = k + i * 8;
+                        unsigned int coordY = l + j * 8;
+                        unsigned int index = _i * FEATURE_VECTOR_SIZE + coordX * 64 + coordY;
+                        float singleAngle = angle[index];
+                        float singleMagnitude = mag[index];
+                        if (singleAngle >= 180.0)
+                        {
+                            singleAngle = singleAngle - 180;
+                            singleMagnitude = -singleMagnitude;
+                        }
+                        unsigned char valueJ = (unsigned char)(singleAngle / 20);
+                        float vJ = singleMagnitude * (singleAngle - Cj[valueJ]) / 20;
+                        float vJp1 = singleMagnitude - vJ;
+                        histogram[i][j][valueJ] += vJp1;
+                        // If valueJ is the last index, it should be 0 and change its sign
+                        if (valueJ == 8)
+                        {
+                            histogram[i][j][0] -= vJ;
+                        }
+                        else
+                        {
+                            histogram[i][j][(valueJ + 1) % 9] += vJ;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Normalize
+        for (int i = 0; i < 7; i++)
+        {
+            for (int j = 0; j < 7; j++)
+            {
+                // baseIndex needs to be calculated only once
+                unsigned int baseIndex = _i * FEATURE_VECTOR_SIZE + i * 252 + j * 36;
+                float powerSum = 0.0;
+                for (int m = 0; m < 9; m++)
+                {
+                    // Square root of sum of squares
+                    powerSum += pow(histogram[i][j][m], 2) +
+                                pow(histogram[i + 1][j][m], 2) +
+                                pow(histogram[i][j + 1][m], 2) +
+                                pow(histogram[i + 1][j + 1][m], 2);
+                }
+                float norm = sqrt(powerSum);
+
+                for (int m = 0; m < 9; m++)
+                {
+                    // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
+                    // 36 * 7 = 252
+                    features[baseIndex + m * 4] =
+                        histogram[i][j][m] / (norm + EPSILON);
+                    features[baseIndex + m * 4 + 1] =
+                        histogram[i + 1][j][m] / (norm + EPSILON);
+                    features[baseIndex + m * 4 + 2] =
+                        histogram[i][j + 1][m] / (norm + EPSILON);
+                    features[baseIndex + m * 4 + 3] =
+                        histogram[i + 1][j + 1][m] / (norm + EPSILON);
+                }
+            }
+        }
+    }
+}
+
+void preprocessImage(string path, float *magVector, float *anglesVector, int index)
+{
+    /*
+     * Esta imagen convierte una ruta a un archivo en un array plano de float
+     * para unirlo a un array plano más grande con todas las magnitudes y ángulos
+     */
+    Mat img, resizedImg, gx, gy, mag, angle;
 
     // Load images in an opencv matrix in gray scale
     img = imread(path, IMREAD_GRAYSCALE);
     if (img.empty())
     {
         cerr << "Could not read the image: " << path << endl;
-        return 1;
+        std::exit(-1);
     }
 
     // Resize image
@@ -115,7 +171,7 @@ int getFeatureVector(string path, float *featureVector)
     // imshow("original", resizedImg);
 
     // Resize image
-    resize(img, resizedImg, Size(64, 64));
+    resize(img, resizedImg, Size(X_DIM, Y_DIM));
     img.release();
 
     // Calculate gradients
@@ -128,131 +184,68 @@ int getFeatureVector(string path, float *featureVector)
     gx.release();
     gy.release();
 
-    // Usar código de CUDA
+    float *locationMag = &magVector[X_DIM * Y_DIM * index];
+    float *locationAngle = &anglesVector[X_DIM * Y_DIM * index];
+
+    memcpy(locationMag, (float *)mag.data, X_DIM * Y_DIM * sizeof(float));
+    memcpy(locationAngle, (float *)angle.data, X_DIM * Y_DIM * sizeof(float));
+    mag.release();
+    angle.release();
+}
+
+void getFeatureVector(float *h_magVectors, float *h_anglesVectors, float *h_features, int totalExamples)
+{
     // Allocate memory
     float *d_angle = NULL;
-    cudaError_t err = cudaMalloc((void **)&d_angle, 64 * 64 * sizeof(float));
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to allocate device vector angles (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
-
     float *d_mag = NULL;
-    err = cudaMalloc((void **)&d_mag, 64 * 64 * sizeof(float));
+    float *d_features = NULL;
 
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to allocate device vector magnitudes (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
+    checkCuda(
+        cudaMalloc(
+            (void **)&d_angle, X_DIM * Y_DIM * totalExamples * sizeof(float)),
+        "Failed to allocate device vector angles");
 
-    float *d_histogram = NULL;
-    err = cudaMalloc((void **)&d_histogram, 8 * 8 * 9 * sizeof(float));
+    checkCuda(
+        cudaMalloc(
+            (void **)&d_mag, X_DIM * Y_DIM * totalExamples * sizeof(float)),
+        "Failed to allocate device vector magnitude");
 
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to allocate device vector C (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
+    checkCuda(
+        cudaMalloc(
+            (void **)&d_features, totalExamples * X_DIM * Y_DIM * sizeof(float)),
+        "Failed to allocate device feature vector");
 
     // Pass parameters
-    err = cudaMemcpy(d_angle, (float *)angle.data, 64 * 64 * sizeof(float), cudaMemcpyHostToDevice);
+    checkCuda(
+        cudaMemcpy(
+            d_angle,
+            h_anglesVectors, X_DIM * Y_DIM * sizeof(float), cudaMemcpyHostToDevice),
+        "Failed to copy vector angles from host ");
 
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to copy vector angles from host to device (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
-
-    err = cudaMemcpy(d_mag, (float *)mag.data, 64 * 64 * sizeof(float), cudaMemcpyHostToDevice);
-
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to copy vector magnitudes from host to device (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
-    angle.release();
-    mag.release();
+    checkCuda(
+        cudaMemcpy(
+            d_mag,
+            h_magVectors, X_DIM * Y_DIM * sizeof(float), cudaMemcpyHostToDevice),
+        "Failed to copy vector magnitudes from host");
 
     // Launch kernel
-    computeHistograms<<<8, 8>>>(d_angle, d_mag, d_histogram);
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to launch kernel (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
+    computeHistograms<<<NUMBER_OF_BLOCKS, NUMBER_OF_THREADS>>>(d_angle, d_mag, d_features, totalExamples);
 
-    err = cudaMemcpy(h_histogram, d_histogram, 8 * 8 * 9 * sizeof(float), cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to copy histograms from device to host (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
+    checkCuda(cudaGetLastError(), "Failed to launch kernel");
+
+    checkCuda(
+        cudaMemcpy(
+            h_features, d_features, FEATURE_VECTOR_SIZE * sizeof(float), cudaMemcpyDeviceToHost),
+        "Failed to copy features from device to host");
 
     // Free device global memory
-    err = cudaFree(d_angle);
-
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to free device vector angles (error: %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
+    checkCuda(cudaFree(d_angle), "Failed to free device vector angles");
 
     // Free device global memory
-    err = cudaFree(d_mag);
+    checkCuda(cudaFree(d_mag), "Failed to free device vector magnitudes");
 
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to free device vector magnitudes (error: %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
     // Free device global memory
-    err = cudaFree(d_histogram);
-
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to free device histograms (error: %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-
-    // Normalize
-    for (int i = 0; i < 7; i++)
-    {
-        for (int j = 0; j < 7; j++)
-        {
-            // baseIndex needs to be calculated only once
-            unsigned int baseIndex = i * 252 + j * 36;
-            float powerSum = 0.0;
-            for (int m = 0; m < 9; m++)
-            {
-                // Square root of sum of squares
-                powerSum += pow(h_histogram[i * 8 * 9 + j * 9 + m], 2) +
-                            pow(h_histogram[(i + 1) * 8 * 9 + j * 9 + m], 2) +
-                            pow(h_histogram[i * 8 * 9 + (j + 1) * 8 + m], 2) +
-                            pow(h_histogram[(i + 1) * 8 * 9 + (j + 1) * 8 + m], 2);
-            }
-            float norm = sqrt(powerSum);
-
-            for (int m = 0; m < 9; m++)
-            {
-                // EPSILON IS A SMALL NUMBER TO AVOID DIVISION BY 0
-                // 36 * 7 = 252
-                featureVector[baseIndex + m * 4] =
-                    h_histogram[i * 8 * 9 + j * 9 + m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 1] =
-                    h_histogram[(i + 1) * 8 * 9 + j * 9 + m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 2] =
-                    h_histogram[i * 8 * 9 + (j + 1) * 8 + m] / (norm + EPSILON);
-                featureVector[baseIndex + m * 4 + 3] =
-                    h_histogram[(i + 1) * 8 * 9 + (j + 1) * 8 + m] / (norm + EPSILON);
-            }
-        }
-    }
-
-    std::free(h_histogram);
-    return 0;
+    checkCuda(cudaFree(d_features), "Failed to free device features");
 }
 
 float predict(float *featureVector, float *weights)
@@ -276,7 +269,7 @@ float cost(unsigned char label, float prediction)
     return -cost1 - cost2;
 }
 
-void trainLogRegression(unsigned int epochs, unsigned int examples, float **features,
+void trainLogRegression(unsigned int epochs, unsigned int examples, float *features,
                         unsigned char *labels, float *weights)
 {
     unsigned int i, j, k;
@@ -297,14 +290,14 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float **feat
         // float costo = 0;
         for (j = 0; j < examples; j++)
         {
-            prediction = predict(features[j], weights);
+            prediction = predict(features + j * FEATURE_VECTOR_SIZE, weights);
             error = labels[j] - prediction;
             slope = alpha * error;
             // cout << "Error=" << error << endl;
             weights[0] = weights[0] + slope;
             for (k = 1; k < FEATURE_VECTOR_SIZE + 1; k++)
             {
-                weights[k] = weights[k] + slope * features[j][k - 1];
+                weights[k] = weights[k] + slope * features[j * FEATURE_VECTOR_SIZE + k - 1];
             }
             // costo += cost(labels[j], prediction);
         }
@@ -416,11 +409,13 @@ int main(int argc, const char **argv)
     const char *nonTiresPath;
     const char *tiresPath;
     vector<string> tireImagePaths, noTireImagePaths;
-    unsigned int i, epochs;
+    int i, epochs;
     unsigned int tireImagesVectorSize, noTireImagesVectorSize, totalSize;
-    float featureVector[FEATURE_VECTOR_SIZE], weights[FEATURE_VECTOR_SIZE + 1];
+    float weights[FEATURE_VECTOR_SIZE + 1];
     float prediction;
-    float **features;
+    float *magVectors;
+    float *anglesVectors;
+    float *features;
     unsigned char *labels;
     char floatToStr[20];
     float h_Cj[10];
@@ -430,13 +425,10 @@ int main(int argc, const char **argv)
         h_Cj[i] = 20.0 * i;
     }
 
-    // copy Cj
-    cudaError_t err = cudaMemcpyToSymbol(Cj, &h_Cj[0], 10 * sizeof(float), size_t(0), cudaMemcpyHostToDevice);
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to copy Cj to device (error: %s)!\n", cudaGetErrorString(err));
-        std::exit(EXIT_FAILURE);
-    }
+    // copy Cj to GPU
+    checkCuda(
+        cudaMemcpyToSymbol(Cj, &h_Cj[0], 10 * sizeof(float), size_t(0), cudaMemcpyHostToDevice),
+        "Failed to copy Cj to device");
 
     // If two paths are passed, it should train
     // the first path is the folder with tires, and the second path is the
@@ -455,34 +447,35 @@ int main(int argc, const char **argv)
         tireImagesVectorSize = tireImagePaths.size();
         noTireImagesVectorSize = noTireImagePaths.size();
         totalSize = tireImagesVectorSize + noTireImagesVectorSize;
-        features = (float **)malloc(sizeof(float *) * totalSize);
+        magVectors = (float *)malloc(sizeof(float) * totalSize * X_DIM * Y_DIM);
+        anglesVectors = (float *)malloc(sizeof(float) * totalSize * X_DIM * Y_DIM);
+        features = (float *)malloc(sizeof(float) * totalSize * FEATURE_VECTOR_SIZE);
 
         labels = (unsigned char *)malloc(sizeof(unsigned char) * totalSize);
 
         for (i = 0; i < tireImagesVectorSize; i++)
         {
-            features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
-            getFeatureVector(string(tiresPath) + tireImagePaths[i],
-                             features[i]);
+            preprocessImage(string(tiresPath) + tireImagePaths[i],
+                            magVectors, anglesVectors, i);
             labels[i] = 1;
         }
 
         for (i = tireImagesVectorSize; i < totalSize; i++)
         {
-            features[i] = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
-            getFeatureVector(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
-                             features[i]);
+            preprocessImage(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
+                            magVectors, anglesVectors, i);
             labels[i] = 0;
         }
 
+        getFeatureVector(magVectors, anglesVectors, features, totalSize);
+
         trainLogRegression(epochs, totalSize, features, labels, weights);
 
-        for (i = 0; i < totalSize; i++)
-        {
-            std::free(features[i]);
-        }
         std::free(features);
+        std::free(magVectors);
+        std::free(anglesVectors);
         std::free(labels);
+        cudaFree(Cj);
 
         ofstream weightsFile(WEIGHTS_FILE_PATH, ios::out);
         if (!weightsFile.is_open())
@@ -513,9 +506,13 @@ int main(int argc, const char **argv)
                  << "containing non-tires images" << endl;
             return -1;
         }
-        getFeatureVector(string(argv[1]), featureVector);
-        drawFeatureVector(featureVector);
-        prediction = predict(featureVector, weights);
+        magVectors = (float *)malloc(sizeof(float) * X_DIM * Y_DIM);
+        anglesVectors = (float *)malloc(sizeof(float) * X_DIM * Y_DIM);
+        features = (float *)malloc(sizeof(float) * FEATURE_VECTOR_SIZE);
+        preprocessImage(string(argv[1]), magVectors, anglesVectors, 0);
+        getFeatureVector(magVectors, anglesVectors, features, 1);
+        drawFeatureVector(features);
+        prediction = predict(features, weights);
 
         if (prediction > 0.5)
         {
