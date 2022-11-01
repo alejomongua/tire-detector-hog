@@ -9,6 +9,7 @@
 #include <cmath>
 #include <fstream>
 #include <cuda_runtime.h>
+#include <omp.h>
 
 #include "listDir.hpp"
 
@@ -29,6 +30,10 @@ using namespace cv;
 #define CELLS_Y Y_DIM / CELL_SIZE
 #define NUMBER_OF_BLOCKS 6
 #define NUMBER_OF_THREADS 128
+
+#ifndef OMP_NUM_THREADS
+#define OMP_NUM_THREADS 4
+#endif
 
 const float cosine[9] = {
     1,
@@ -455,20 +460,22 @@ int main(int argc, const char **argv)
 
         labels = (unsigned char *)malloc(sizeof(unsigned char) * totalSize);
 
-        for (i = 0; i < tireImagesVectorSize; i++)
+#pragma omp parallel num_threads(OMP_NUM_THREADS)
         {
-            preprocessImage(string(tiresPath) + tireImagePaths[i],
-                            magVectors, anglesVectors, i);
-            labels[i] = 1;
-        }
+            for (i = omp_get_thread_num(); i < tireImagesVectorSize; i += OMP_NUM_THREADS)
+            {
+                preprocessImage(string(tiresPath) + tireImagePaths[i],
+                                magVectors, anglesVectors, i);
+                labels[i] = 1;
+            }
 
-        for (i = tireImagesVectorSize; i < totalSize; i++)
-        {
-            preprocessImage(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
-                            magVectors, anglesVectors, i);
-            labels[i] = 0;
+            for (i = omp_get_thread_num() + tireImagesVectorSize; i < totalSize; i += OMP_NUM_THREADS)
+            {
+                preprocessImage(string(nonTiresPath) + noTireImagePaths[i - tireImagesVectorSize],
+                                magVectors, anglesVectors, i);
+                labels[i] = 0;
+            }
         }
-
         getFeatureVector(magVectors, anglesVectors, features, totalSize);
 
         trainLogRegression(epochs, totalSize, features, labels, weights);
