@@ -28,8 +28,14 @@ using namespace cv;
 #define BINS 9
 #define CELLS_X X_DIM / CELL_SIZE
 #define CELLS_Y Y_DIM / CELL_SIZE
+
+#ifndef NUMBER_OF_BLOCKS
 #define NUMBER_OF_BLOCKS 6
+#endif
+
+#ifndef NUMBER_OF_THREADS
 #define NUMBER_OF_THREADS 128
+#endif
 
 #ifndef OMP_NUM_THREADS
 #define OMP_NUM_THREADS 4
