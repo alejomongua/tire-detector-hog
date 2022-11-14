@@ -34,7 +34,9 @@ endif()
 
 find_package(OpenMP REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(MPI)
 include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 add_library(listDir src/listDir.cpp)
 
 if(DEFINED CMAKE_CUDA_STANDARD)
@@ -44,5 +46,7 @@ endif()
 
 add_executable(Threaded src/threaded.cpp)
 add_executable(Secuencial src/secuencial.cpp)
+add_executable(OpenMPI src/mpi.cpp)
 target_link_libraries(Threaded listDir ${OpenCV_LIBS} OpenMP::OpenMP_CXX)
 target_link_libraries(Secuencial listDir ${OpenCV_LIBS})
+target_link_libraries(OpenMPI PUBLIC listDir ${OpenCV_LIBS} ${MPI_C_LIBRARIES} MPI::MPI_CXX)
