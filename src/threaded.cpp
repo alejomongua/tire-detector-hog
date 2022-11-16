@@ -192,7 +192,7 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float** feat
         weights[i] = 0;
     }
 
-    cout << "costo = [";
+    // cout << "costo = [";
     for (i = 0; i < epochs; i++)
     {
         if (!(i % 100))
@@ -214,9 +214,9 @@ void trainLogRegression(unsigned int epochs, unsigned int examples, float** feat
             }
             costo += cost(labels[j], prediction);
         }
-        cout << costo / examples << ", ";
+        // cout << costo / examples << ", ";
     }
-    cout << "]" << endl;
+    // cout << "]" << endl;
 }
 
 /*
