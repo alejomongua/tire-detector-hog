@@ -12,8 +12,6 @@ set(EXECUTABLE_OUTPUT_PATH ${dir})
 set(LIBRARY_OUTPUT_PATH ${dir}lib)
 set(CMAKE_CACHEFILE_DIR ${dir})
 
-add_compile_definitions(OMP_NUM_THREADS=4)
-
 if(DEFINED NUMBER_OF_THREADS)
     message("Definido número de hilos: ${NUMBER_OF_THREADS}")
     add_compile_definitions(NUMBER_OF_THREADS=${NUMBER_OF_THREADS})
@@ -22,6 +20,11 @@ endif()
 if(DEFINED NUMBER_OF_BLOCKS)
     message("Definido número de bloques: ${NUMBER_OF_BLOCKS}")
     add_compile_definitions(NUMBER_OF_BLOCKS=${NUMBER_OF_BLOCKS})
+endif()
+
+if(DEFINED OMP_NUM_THREADS)
+    message("Definido número de hilos de OpenMP: ${OMP_NUM_THREADS}")
+    add_compile_definitions(OMP_NUM_THREADS=${OMP_NUM_THREADS})
 endif()
 
 if(DEFINED WITH_CUDA)

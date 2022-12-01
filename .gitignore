@@ -12,6 +12,7 @@ _deps
 .vscode
 build
 weights.data
+*.svg
 *.o
 *.pyc
 __pycache__
